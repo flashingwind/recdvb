@@ -523,7 +523,7 @@ show_usage(char *cmd)
 {
     fprintf(stderr, "%s Ver %s\n", cmd, version);
 #ifdef HAVE_LIBARIBB25
-    fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+    fprintf(stderr, "Usage: \n%s [--b25 [--strip] [--emm] [--round N]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
@@ -541,9 +541,9 @@ show_options(void)
     fprintf(stderr, "Options:\n");
 #ifdef HAVE_LIBARIBB25
     fprintf(stderr, "--b25:               Decrypt using BCAS card\n");
-    fprintf(stderr, "  --round N:         Specify round number\n");
     fprintf(stderr, "  --strip:           Strip null stream\n");
-    fprintf(stderr, "  --EMM:             Instruct EMM operation\n");
+    fprintf(stderr, "  --emm:             Instruct EMM operation\n");
+    fprintf(stderr, "  --round N:         Specify round number\n");
 #endif
     fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
     fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
