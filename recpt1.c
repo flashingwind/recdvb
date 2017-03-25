@@ -522,7 +522,7 @@ void
 show_usage(char *cmd)
 {
     fprintf(stderr, "%s Ver %s\n", cmd, version);
-#ifdef HAVE_LIBARIB25
+#ifdef HAVE_LIBARIBB25
     fprintf(stderr, "Usage: \n%s [--b25 [--round N] [--strip] [--EMM]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
     fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
@@ -539,7 +539,7 @@ void
 show_options(void)
 {
     fprintf(stderr, "Options:\n");
-#ifdef HAVE_LIBARIB25
+#ifdef HAVE_LIBARIBB25
     fprintf(stderr, "--b25:               Decrypt using BCAS card\n");
     fprintf(stderr, "  --round N:         Specify round number\n");
     fprintf(stderr, "  --strip:           Strip null stream\n");
@@ -655,7 +655,7 @@ main(int argc, char **argv)
     int result;
     int option_index;
     struct option long_options[] = {
-#ifdef HAVE_LIBARIB25
+#ifdef HAVE_LIBARIBB25
         { "b25",       0, NULL, 'b'},
         { "B25",       0, NULL, 'b'},
         { "round",     1, NULL, 'r'},
