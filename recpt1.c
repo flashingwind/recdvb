@@ -299,7 +299,7 @@ reader_func(void *p)
 //    struct sockaddr_in *addr = NULL;
     BUFSZ *qbuf;
     static splitbuf_t splitbuf;
-    ARIB_STD_B25_BUFFER sbuf, dbuf, buf;
+    ARIB_STD_B25_BUFFER dbuf, buf;
     int code;
     int split_select_finish = TSS_ERROR;
 
@@ -325,35 +325,8 @@ reader_func(void *p)
             break;
         }
 
-        sbuf.data = qbuf->buffer;
-        sbuf.size = qbuf->size;
-
-        buf = sbuf; /* default */
-
-        if(use_b25) {
-            int lp = 0;
-
-            while(1){
-	            code = b25_decode(dec, &sbuf, &dbuf);
-	            if(code < 0) {
-					fprintf(stderr, "b25_decode failed (code=%d).", code);
-	                if(lp++ < 5){
-						//decoder restart
-						fprintf(stderr, "\ndecoder restart! \n");
-						b25_shutdown(dec);
-						b25_startup(tdata->dopt);
-					}else{
-		                fprintf(stderr, " fall back to encrypted recording.\n");
-		                use_b25 = FALSE;
-		                break;
-		            }
-	            }else{
-	                buf = dbuf;
-		            break;
-		        }
-	        }
-        }
-
+        buf.data = qbuf->buffer;
+        buf.size = qbuf->size;
 
         if(use_splitter) {
             splitbuf.buffer_filled = 0;
@@ -412,6 +385,31 @@ reader_func(void *p)
         } /* if */
 
 
+        if(use_b25) {
+            int lp = 0;
+
+            while(1){
+	            code = b25_decode(dec, &buf, &dbuf);
+	            if(code < 0) {
+					fprintf(stderr, "b25_decode failed (code=%d).", code);
+	                if(lp++ < 5){
+						//decoder restart
+						fprintf(stderr, "\ndecoder restart! \n");
+						b25_shutdown(dec);
+						b25_startup(tdata->dopt);
+					}else{
+		                fprintf(stderr, " fall back to encrypted recording.\n");
+		                use_b25 = FALSE;
+		                break;
+		            }
+	            }else{
+	                buf = dbuf;
+		            break;
+		        }
+	        }
+        }
+
+
         if(!fileless) {
             /* write data to output file */
             int size_remain = buf.size;
@@ -456,30 +454,18 @@ reader_func(void *p)
         /* normal exit */
         if((f_exit && !p_queue->num_used) || file_err) {
 
-            buf = sbuf; /* default */
+            if(use_splitter) {
+                free(splitbuf.buffer);
+                splitbuf.buffer = NULL;
+                splitbuf.buffer_size = 0;
+            }
 
             if(use_b25) {
-                code = b25_finish(dec, &sbuf, &dbuf);
+                code = b25_finish(dec, &dbuf);
                 if(code < 0)
                     fprintf(stderr, "b25_finish failed\n");
                 else
                     buf = dbuf;
-            }
-
-            if(use_splitter) {
-                /* 分離対象以外をふるい落とす */
-                code = split_ts(splitter, &buf, &splitbuf);
-                if(code == TSS_NULL) {
-                    split_select_finish = TSS_ERROR;
-                    fprintf(stderr, "PMT reading..\n");
-                }
-                else if(code != TSS_SUCCESS) {
-                    fprintf(stderr, "split_ts failed\n");
-                    break;
-                }
-
-                buf.data = splitbuf.buffer;
-                buf.size = splitbuf.buffer_size;
             }
 
             if(!fileless && !file_err) {
@@ -498,12 +484,6 @@ reader_func(void *p)
                     if(errno == EPIPE)
                         pthread_kill(signal_thread, SIGPIPE);
                 }
-            }
-
-            if(use_splitter) {
-                free(splitbuf.buffer);
-                splitbuf.buffer = NULL;
-                splitbuf.buffer_size = 0;
             }
 
             break;
