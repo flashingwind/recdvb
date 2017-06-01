@@ -551,7 +551,7 @@ calc_cn(int fd, int type, boolean use_bell)
 					return;
 #ifdef DTV_STAT_SIGNAL_STRENGTH
 				}else{
-				    fprintf(stderr,"\rSNR0: %d", prop[0].u.st.stat[0].uvalue);
+				    fprintf(stderr,"\rSNR0: %llu", prop[0].u.st.stat[0].uvalue);
 					return;
 				}
 #endif

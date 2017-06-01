@@ -9,7 +9,7 @@ DIE=0
 
 (autoconf --version) < /dev/null > /dev/null 2>&1 || {
   echo
-  echo "You must have autoconf installed to compile recpt1."
+  echo "You must have autoconf installed."
   echo "Get ftp://ftp.gnu.org/pub/gnu/autoconf/autoconf-2.62.tar.gz"
   echo "(or a newer version if it is available)"
   DIE=1
@@ -18,7 +18,7 @@ DIE=0
 
 (automake --version) < /dev/null > /dev/null 2>&1 || {
   echo
-  echo "You must have automake installed to compile recpt1."
+  echo "You must have automake installed."
   echo "Get ftp://ftp.gnu.org/pub/gnu/automake/automake-1.10.1.tar.gz"
   echo "(or a newer version if it is available)"
   DIE=1
