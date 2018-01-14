@@ -4,6 +4,14 @@ recdvb
 コマンド指定体系は、recpt1との互換をほぼ保っておりますのでフロントエンド側の変更は最小限に抑えれます。
 
 
+[コンパイル手順]
+
+ $ ./autogen.sh
+ $ ./configure --enable-b25
+ $ make
+ $ make install
+
+
 [recpt1からの変更点と備考]
 ・"--device"が廃止され変わりにDVBデバイスを指定する"--dev n"を追加
   DVBデバイス自動選択機能があるので"--device"と同様に"--dev"を特に指定する必要はありません。
