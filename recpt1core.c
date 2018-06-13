@@ -91,7 +91,7 @@ search_channelS(char *channel)
 	}else{
 	    boolean bs_type = FALSE;
 
-	    if(channel[0] == 'B' && channel[1] == 'S') {
+	    if((channel[0] == 'B' && channel[1] == 'S') || (channel[0] == 'b' && channel[1] == 's')) {
 	        bs_ch += 2;
 	        bs_type = TRUE;
 	    }
@@ -150,16 +150,30 @@ search_channelS(char *channel)
 ISDB_T_FREQ_CONV_TABLE *
 searchrecoff(char *channel)
 {
+    char ch_buff[8];
     int lp;
 
     if(search_channelS(channel))
 		return &isdb_t_conv_set;
+	lp = 0;
+	if(channel[0] == 'C' || channel[0] == 'c') {
+		ch_buff[0] = 'C';
+		lp++;
+		if(channel[1] == 'S' || channel[1] == 's') {
+			ch_buff[1] = 'S';
+			lp++;
+		}
+	}
+	ch_buff[lp] = '\0';
+	while(channel[lp] == '0')
+		lp++;
+	strncat(ch_buff, &channel[lp], 7 - strlen(ch_buff));
     for(lp = 0; isdb_t_conv_table[lp].parm_freq != NULL; lp++) {
         /* return entry number in the table when strings match and
          * lengths are same. */
-        if((memcmp(isdb_t_conv_table[lp].parm_freq, channel,
-                   strlen(channel)) == 0) &&
-           (strlen(channel) == strlen(isdb_t_conv_table[lp].parm_freq))) {
+        if((memcmp(isdb_t_conv_table[lp].parm_freq, ch_buff,
+                   strlen(ch_buff)) == 0) &&
+           (strlen(ch_buff) == strlen(isdb_t_conv_table[lp].parm_freq))) {
             return &isdb_t_conv_table[lp];
         }
     }
@@ -626,7 +640,7 @@ show_channels(void)
 	fprintf(stderr, "200ch: Star Channel1\n");
 	fprintf(stderr, "201ch: Star Channel2\n");
 	fprintf(stderr, "202ch: Star Channel3\n");
-	fprintf(stderr, "211ch: BS11 Digital\n");
+	fprintf(stderr, "211ch: BS11\n");
 	fprintf(stderr, "222ch: TwellV\n");
 	fprintf(stderr, "231ch: Housou Daigaku 1\n");
 	fprintf(stderr, "232ch: Housou Daigaku 2\n");

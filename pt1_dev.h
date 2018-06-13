@@ -49,13 +49,11 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     {   0, CHTYPE_SATELLITE, 1, 0x4011, "161"},  /* 161ch：BS-TBS */
     {   0, CHTYPE_SATELLITE, 2, 0x4012, "171"},  /* 171ch：BSジャパン */
     {   1, CHTYPE_SATELLITE, 0, 0x4030, "191"},  /* 191ch：WOWOWプライム */
+    {   1, CHTYPE_SATELLITE, 1, 0x4031, "103"},  /* 103ch：NHK BSプレミアム*/
+    {   1, CHTYPE_SATELLITE, 2, 0x4632, "256"},  /* 256ch：ディズニー・チャンネル */
     {   2, CHTYPE_SATELLITE, 0, 0x4450, "192"},  /* 192ch：WOWOWライブ */
     {   2, CHTYPE_SATELLITE, 1, 0x4451, "193"},  /* 193ch：WOWOWシネマ */
-    {   3, CHTYPE_SATELLITE, 0, 0x4470, "201"},  /* 201ch：スター・チャンネル2 */
-    {   3, CHTYPE_SATELLITE, 0, 0x4470, "202"},  /* 202ch：スター・チャンネル3 */
-    {   3, CHTYPE_SATELLITE, 1, 0x4671, "236"},  /* 236ch：BSアニマックス */
-    {   3, CHTYPE_SATELLITE, 2, 0x4672, "256"},  /* 256ch：ディズニー・チャンネル */
-    {   4, CHTYPE_SATELLITE, 0, 0x4090, "211"},  /* 211ch：BS11デジタル */
+    {   4, CHTYPE_SATELLITE, 0, 0x4090, "211"},  /* 211ch：BS11 */
     {   4, CHTYPE_SATELLITE, 1, 0x4091, "200"},  /* 200ch：スター・チャンネル1 */
     {   4, CHTYPE_SATELLITE, 2, 0x4092, "222"},  /* 222ch：TwellV */
     {   5, CHTYPE_SATELLITE, 0, 0x46b0, "238"},  /* 238ch：FOXスポーツ＆エンターテイメント */
@@ -66,8 +64,10 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     {   5, CHTYPE_SATELLITE, 2, 0x46b2, "531"},  /* 531ch：放送大学ラジオ */
     {   6, CHTYPE_SATELLITE, 0, 0x40d0, "141"},  /* 141ch：BS日テレ */
     {   6, CHTYPE_SATELLITE, 1, 0x40d1, "181"},  /* 181ch：BSフジ */
-    {   7, CHTYPE_SATELLITE, 0, 0x40f1, "101"},  /* 101ch：NHK-BS1 */
-    {   7, CHTYPE_SATELLITE, 1, 0x40f2, "103"},  /* 103ch：NHK-BSプレミアム*/
+    {   6, CHTYPE_SATELLITE, 2, 0x46D2, "236"},  /* 236ch：BSアニマックス */
+    {   7, CHTYPE_SATELLITE, 0, 0x40f1, "101"},  /* 101ch：NHK BS1 */
+    {   7, CHTYPE_SATELLITE, 1, 0x40f2, "201"},  /* 201ch：スター・チャンネル2 */
+    {   7, CHTYPE_SATELLITE, 1, 0x40f2, "202"},  /* 202ch：スター・チャンネル3 */
     {   8, CHTYPE_SATELLITE, 0, 0x0000, "000"},  /* 000ch：4K・8K試験放送 */
     {   9, CHTYPE_SATELLITE, 0, 0x4730, "234"},  /* 234ch：グリーンチャンネル */
     {   9, CHTYPE_SATELLITE, 1, 0x4731, "242"},  /* 242ch：J SPORTS 1 */
