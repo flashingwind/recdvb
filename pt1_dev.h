@@ -64,7 +64,7 @@ ISDB_T_FREQ_CONV_TABLE    isdb_t_conv_table[] = {
     {   5, CHTYPE_SATELLITE, 2, 0x46b2, "531"},  /* 531ch：放送大学ラジオ */
     {   6, CHTYPE_SATELLITE, 0, 0x40d0, "141"},  /* 141ch：BS日テレ */
     {   6, CHTYPE_SATELLITE, 1, 0x40d1, "181"},  /* 181ch：BSフジ */
-    {   6, CHTYPE_SATELLITE, 2, 0x46D2, "236"},  /* 236ch：BSアニマックス */
+    {   6, CHTYPE_SATELLITE, 2, 0x46d2, "236"},  /* 236ch：BSアニマックス */
     {   7, CHTYPE_SATELLITE, 0, 0x40f1, "101"},  /* 101ch：NHK BS1 */
     {   7, CHTYPE_SATELLITE, 1, 0x40f2, "201"},  /* 201ch：スター・チャンネル2 */
     {   7, CHTYPE_SATELLITE, 1, 0x40f2, "202"},  /* 202ch：スター・チャンネル3 */
