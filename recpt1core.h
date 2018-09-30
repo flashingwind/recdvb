@@ -72,7 +72,7 @@ typedef struct thread_data {
     boolean tune_persistent; //invaliable
 
     QUEUE_T *queue; //invariable
-    ISDB_T_FREQ_CONV_TABLE *table; //invariable
+    CHANNEL_SET *table; //invariable
     sock_data *sock_data; //invariable
     pthread_t signal_thread; //invariable
     decoder *decoder; //invariable
@@ -82,7 +82,8 @@ typedef struct thread_data {
 
 extern const char *version;
 
-extern ISDB_T_FREQ_CONV_TABLE isdb_t_conv_set;
+extern ISDB_FREQ_CONV_TABLE isdb_conv_table[];
+extern CHANNEL_SET channel_set;
 extern boolean f_exit;
 
 /* prototypes */
@@ -91,10 +92,10 @@ int set_frequency(thread_data *tdata, boolean);
 int close_tuner(thread_data *tdata);
 int lnb_control(int dev_num, int lnb_vol);
 void show_channels(void);
-ISDB_T_FREQ_CONV_TABLE *searchrecoff(char *channel);
+CHANNEL_SET *searchrecoff(char *channel);
 void calc_cn(int fd, int type, boolean use_bell);
 int parse_time(char *rectimestr, int *recsec);
 void do_bell(int bell);
-
+void modify_ch_str(char *channel);
 
 #endif

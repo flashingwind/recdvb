@@ -47,7 +47,6 @@ extern boolean f_exit;
 void stream_start(thread_data *tdata);
 void stream_stop(thread_data *tdata);
 
-
 //read 1st line from socket
 void read_line(int socket, char *p){
 	int i;
@@ -74,7 +73,7 @@ void read_line(int socket, char *p){
 void *
 mq_recv(void *t)
 {
-    ISDB_T_FREQ_CONV_TABLE *table = NULL;
+    CHANNEL_SET *table = NULL;
     thread_data *tdata = (thread_data *)t;
     message_buf rbuf;
     char channel[16];
@@ -88,29 +87,22 @@ mq_recv(void *t)
 
 		sscanf(rbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, &recsec, &time_to_add, service_id);
 
-	    ISDB_T_FREQ_CONV_TABLE stock = tdata->table[0];
-		boolean tbl_stat = tdata->table == &isdb_t_conv_set ? TRUE : FALSE;
+	    CHANNEL_SET stock = tdata->table[0];
+		boolean tbl_stat = tdata->table == &channel_set ? TRUE : FALSE;
 		if((table = searchrecoff(channel)) != NULL){
-//			tdata->table[0] = stock;
 	        if(strcmp(table->parm_freq, stock.parm_freq)) {
 				strcpy(channel, table->parm_freq);
-
-	            /* stop stream */
-//	            stream_stop(tdata);
 
 	            /* wait for remainder */
 	            while(tdata->queue->num_used > 0) {
 	                usleep(10000);
 	            }
-
-#if 1
 	            if (table->type != stock.type) {
 	                /* re-open device */
 	                tdata->table = &stock;
 	                if(close_tuner(tdata) != 0)
 	                    return NULL;
 
-//		            tdata->table = table;
 	                tune(channel, tdata, -1);
 	            } else {
 		            tdata->table = table;
@@ -119,16 +111,11 @@ mq_recv(void *t)
 	                    fprintf(stderr, "Cannot tune to the specified channel\n");
 	                    goto CHECK_TIME_TO_ADD;
 	                }
-//	                stream_start(tdata);
 	                calc_cn(tdata->fefd, tdata->table->type, FALSE);
 	            }
-#else
-		        tdata->table = table;
-	            tune(channel, tdata, -1);
-#endif
 			}else
-			if(tbl_stat && table == &isdb_t_conv_set)
-				isdb_t_conv_set = stock;
+			if(tbl_stat && table == &channel_set)
+				channel_set = stock;
         }
 
 CHECK_TIME_TO_ADD:
@@ -610,6 +597,70 @@ init_signal_handlers(pthread_t *signal_thread, thread_data *tdata)
 }
 
 int
+set_ch_table(void)
+{
+	FILE *fp;
+	char *p, buf[256];
+	ssize_t len;
+
+	if ((len = readlink("/proc/self/exe", buf, sizeof(buf) - 8)) == -1)
+		return 2;
+	buf[len] = '\0';
+	strcat(buf, ".conf");
+
+	fp = fopen(buf, "r");
+	if (fp == NULL)
+	{
+		fprintf(stderr, "Cannot open '%s'\n", buf);
+		return 1;
+	}
+
+	int i = 0;
+	len = sizeof(isdb_conv_table[0].channel) - 1;
+	while(fgets(buf, sizeof(buf), fp) && i < MAX_CH - 1) {
+		if(buf[0] == ';')
+			continue;
+		p = buf + strlen(buf) - 1;
+		while((p >= buf) && (*p == '\r' || *p == '\n'))
+			*p-- = '\0';
+		if(p < buf)
+			continue;
+
+		int n = 0;
+		char *cp[3];
+		boolean bOk = FALSE;
+		p = cp[n++] = buf;
+		while(1) {
+			p = strchr(p, '\t');
+			if(p) {
+				*p++ = '\0';
+				cp[n++] = p;
+				if(n > 2) {
+					bOk = TRUE;
+					break;
+				}
+			}
+			else
+				break;
+		}
+		if(bOk) {
+			strncpy(isdb_conv_table[i].channel, cp[0], len);
+			isdb_conv_table[i].channel[len] = '\0';
+			modify_ch_str(isdb_conv_table[i].channel);
+			isdb_conv_table[i].freq_no = (int)strtol(cp[1], NULL, 10);
+			isdb_conv_table[i].tsid = (unsigned int)strtol(cp[2], NULL, 0);
+			i++;
+		}
+	}
+
+	fclose(fp);
+	isdb_conv_table[i].channel[0] = '\0';
+	isdb_conv_table[i].tsid = 0;
+
+	return 0;
+}
+
+int
 main(int argc, char **argv)
 {
     time_t cur_time;
@@ -674,6 +725,9 @@ main(int argc, char **argv)
 	int connected_socket = 0, listening_socket = 0;
 	unsigned int len;
 	char *channel = NULL;
+
+	if(set_ch_table() != 0)
+		return 1;
 
     while((result = getopt_long(argc, argv, "br:smn:ua:H:p:d:hvli:",
                                 long_options, &option_index)) != -1) {

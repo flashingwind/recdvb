@@ -19,10 +19,8 @@
 
 /* globals */
 boolean f_exit = FALSE;
-char name_buff[16];
-ISDB_T_FREQ_CONV_TABLE isdb_t_conv_set = {
-    .parm_freq = name_buff
-};
+ISDB_FREQ_CONV_TABLE isdb_conv_table[MAX_CH];
+CHANNEL_SET channel_set;
 
 // 機種依存用
 #define OTHER_TUNER	0x0000		// 未知
@@ -44,6 +42,33 @@ struct {
 	{ "DiBcom 8000 ISDB-T", DIBCOM8000},
 	{ NULL, 0 }
 };
+
+void
+modify_ch_str(char *channel)
+{
+	char buf[16];
+	char *p1 = channel;
+	char *p2 = buf;
+
+	if(!p1 || *p1 == '\0')
+		return;
+
+	if(*p1 == '0' && (*(p1 + 1) == 'X' || *(p1 + 1) == 'x')) {
+		*p2++ = '0';
+		*p2++ = 'x';
+		p1 += 2;
+	}
+
+	while(!isdigit(*p1) && *p1 != '\0')
+		*p2++ = toupper(*p1++);
+	*p2 = '\0';
+
+	while(*p1 == '0')
+		p1++;
+
+	strcat(p2, p1);
+	strcpy(channel, buf);
+}
 
 static unsigned int GetFrequency_S(int ch)
 {
@@ -75,108 +100,67 @@ static unsigned int GetFrequency_T(int ch)
 	return freq;
 }
 
-/* lookup frequency conversion table*/
-boolean
-search_channelS(char *channel)
-{
-    unsigned int tsid = 0;
-    unsigned int node = 0;
-    unsigned int slot = 0;
-    char *bs_ch = channel;
-    int lp;
 
-    if(channel[0] == '0' && ( channel[1] == 'X' || channel[1] == 'x')){
-		tsid = strtol( channel, NULL, 16 );
-		bs_ch += strlen( bs_ch );
-	}else{
-	    boolean bs_type = FALSE;
-
-	    if((channel[0] == 'B' && channel[1] == 'S') || (channel[0] == 'b' && channel[1] == 's')) {
-	        bs_ch += 2;
-	        bs_type = TRUE;
-	    }
-	    while(isdigit(*bs_ch)) {
-	        tsid *= 10;
-	        tsid += *bs_ch++ - '0';
-	    }
-	    if( bs_type ){
-	        if(*bs_ch == '_' && (tsid&0x01) && tsid < ISDB_T_NODE_LIMIT) {
-	            if(isdigit(*++bs_ch)) {
-	                slot = *bs_ch - '0';
-	                if(*++bs_ch == '\0' && slot < ISDB_T_SLOT_LIMIT) {
-						node = tsid / 2;
-	    				for(lp = 0; isdb_t_conv_table[lp].set_freq<12; lp++){
-							if( isdb_t_conv_table[lp].set_freq == node && isdb_t_conv_table[lp].add_freq == slot ){
-					            isdb_t_conv_set.set_freq = node;
-					            isdb_t_conv_set.type = CHTYPE_SATELLITE;
-			                    isdb_t_conv_set.add_freq = slot;
-					            isdb_t_conv_set.tsid = isdb_t_conv_table[lp].tsid;
-			                    sprintf(name_buff, "BS%d_%d", tsid, slot);
-					            return TRUE;
-					        }
-					    }
-	                }
-	            }
-	        }
-	        return FALSE;
-		}
-	}
-    if( 0x4010U<=tsid && tsid<=0x7fffU && *bs_ch=='\0' ){
-		node = ( tsid & 0x01f0U ) >> 4;
-        slot = tsid & 0x0007U;
-        if((tsid & 0xf000U) == 0x4000U ){
-			if( node & 0x0001 ){
-	            isdb_t_conv_set.set_freq = node / 2;
-                if( node == 15 )
-                    slot--;
-                isdb_t_conv_set.add_freq = slot;
-	        }else
-                return FALSE;
-        }else{
-			if( (node & 0x0001) == 0 && slot == 0 ){
-         	    isdb_t_conv_set.set_freq = node / 2 + 11;
-                isdb_t_conv_set.add_freq = 0;
-	        }else
-                return FALSE;
-        }
-		isdb_t_conv_set.type = CHTYPE_SATELLITE;
-        isdb_t_conv_set.tsid = tsid;
-        sprintf(name_buff, "0x%X", tsid);
-        return TRUE;
-	}
-    return FALSE;
-}
-
-ISDB_T_FREQ_CONV_TABLE *
+CHANNEL_SET *
 searchrecoff(char *channel)
 {
-    char ch_buff[8];
-    int lp;
+	char ch[16];
+    int i = 0, ch_no;
 
-    if(search_channelS(channel))
-		return &isdb_t_conv_set;
-	lp = 0;
-	if(channel[0] == 'C' || channel[0] == 'c') {
-		ch_buff[0] = 'C';
-		lp++;
-		if(channel[1] == 'S' || channel[1] == 's') {
-			ch_buff[1] = 'S';
-			lp++;
+	if(*channel == '\0' || strlen(channel) > 15)
+		return NULL;
+
+	strcpy(ch, channel);
+	modify_ch_str(ch);
+	ch_no = (int)strtol(ch, NULL, 0);
+	if((ch_no > 0 && ch_no < 133) || (ch[0] == 'C' && isdigit(*(ch + 1)))) {
+		if(ch_no == 0) {  // CATV
+			ch_no = (int)strtol(ch + 1, NULL, 10);
+			if(ch_no > 12 && ch_no <= 22)
+				ch_no -= 10;
+			else if(ch_no > 22 && ch_no <= 63)
+				ch_no--;
+			else
+				return NULL;
+		}
+		else if(ch_no < 4)
+			ch_no--;
+		else if(ch_no < 13)
+			ch_no += 9;
+		else
+			ch_no += 50;
+		
+		channel_set.freq_no = ch_no;
+        channel_set.tsid = 0;
+		channel_set.type = CHTYPE_GROUND;
+		strcpy(channel_set.parm_freq, ch);
+        return &channel_set;
+	}
+	else if(ch_no >= 0x4000 && ch_no <= 0x7fff) {
+		while(isdb_conv_table[i].tsid > 0) {
+			if(ch_no == isdb_conv_table[i].tsid) {
+				channel_set.freq_no = isdb_conv_table[i].freq_no;
+				channel_set.tsid = isdb_conv_table[i].tsid;
+				channel_set.type = CHTYPE_SATELLITE;
+		        sprintf(channel_set.parm_freq, "0x%X", ch_no);
+				return &channel_set;
+			}
+			i++;
 		}
 	}
-	ch_buff[lp] = '\0';
-	while(channel[lp] == '0')
-		lp++;
-	strncat(ch_buff, &channel[lp], 7 - strlen(ch_buff));
-    for(lp = 0; isdb_t_conv_table[lp].parm_freq != NULL; lp++) {
-        /* return entry number in the table when strings match and
-         * lengths are same. */
-        if((memcmp(isdb_t_conv_table[lp].parm_freq, ch_buff,
-                   strlen(ch_buff)) == 0) &&
-           (strlen(ch_buff) == strlen(isdb_t_conv_table[lp].parm_freq))) {
-            return &isdb_t_conv_table[lp];
-        }
-    }
+	else {
+		while(isdb_conv_table[i].channel[0] != '\0') {
+			if(!strcmp(ch, isdb_conv_table[i].channel)) {
+				channel_set.freq_no = isdb_conv_table[i].freq_no;
+				channel_set.tsid = isdb_conv_table[i].tsid;
+				channel_set.type = CHTYPE_SATELLITE;
+				strcpy(channel_set.parm_freq, ch);
+				return &channel_set;
+			}
+			i++;
+		}
+	}
+
     return NULL;
 }
 
@@ -204,10 +188,10 @@ set_frequency(thread_data *tdata, boolean msg_view)
                 fprintf(stderr, "tuner is not UHF(FE_OFDM)\n");
             return 1;
         }
-        fprintf(stderr,"\nUsing DVB device \"%s\"\n",fe_info.name);
+        fprintf(stderr,"Using DVB device \"%s\"\n",fe_info.name);
 
         prop[0].cmd = DTV_FREQUENCY;
-        prop[0].u.data = GetFrequency_T(tdata->table->set_freq);
+        prop[0].u.data = GetFrequency_T(tdata->table->freq_no);
 #if 0
 	    prop[1].cmd = DTV_STREAM_ID;
         if(tuner_type != FRIIO_WT)
@@ -228,7 +212,7 @@ set_frequency(thread_data *tdata, boolean msg_view)
                 fprintf(stderr, "tuner is not BS/CS110(FE_QPSK)\n");
             return 1;
         }
-        fprintf(stderr,"\nUsing DVB device \"%s\"\n",fe_info.name);
+        fprintf(stderr,"Using DVB device \"%s\"\n",fe_info.name);
         tuner_type |= ISDBS_TUNER;
 
 		if(0 <= tdata->lnb && tdata->lnb <= 2){
@@ -241,7 +225,7 @@ set_frequency(thread_data *tdata, boolean msg_view)
 		}
 
         prop[0].cmd = DTV_FREQUENCY;
-        prop[0].u.data = GetFrequency_S(tdata->table->set_freq);
+        prop[0].u.data = GetFrequency_S(tdata->table->freq_no);
         prop[1].cmd = DTV_STREAM_ID;
         prop[1].u.data = tdata->table->tsid;
         prop[2].cmd = DTV_TUNE;
@@ -270,7 +254,7 @@ open_tuner(thread_data *tdata, int dev_num, boolean msg_view)
             tdata->fefd = 0;
             return 1;
         }
-        fprintf(stderr, "\rdevice = %s", device);
+        fprintf(stderr, "device = %s\n", device);
     }
 	if(set_frequency(tdata, msg_view)){
 		close(tdata->fefd);
@@ -342,7 +326,7 @@ dvb_lock_check(thread_data *tdata)
 		}
 		nanosleep(&ts, NULL);
 	}
-	fprintf(stderr, "dvb_lock_check() timeout");
+	fprintf(stderr, "dvb_lock_check() timeout\n");
     return 1;
 SUCCESS_EXIT:;
 #endif
@@ -417,7 +401,7 @@ close_tuner(thread_data *tdata)
         }
     }
 
-	if(tdata->table == &isdb_t_conv_set)
+	if(tdata->table == &channel_set)
 		tdata->table = NULL;
     if(tdata->tfd != -1){
 	    close(tdata->tfd);
@@ -464,13 +448,13 @@ lnb_control(int dev_num, int lnb_vol)
         fprintf(stderr, "cannot open \"%s\"\n", device);
         return 1;
     }
-    fprintf(stderr, "\rdevice = %s", device);
+    fprintf(stderr, "device = %s\n", device);
     if( (ioctl(fefd,FE_GET_INFO, &fe_info) < 0)){
         fprintf(stderr, "FE_GET_INFO failed\n");
 		close(fefd);
         return 1;
     }
-    fprintf(stderr,"\nUsing DVB device \"%s\"\n",fe_info.name);
+    fprintf(stderr,"Using DVB device \"%s\"\n",fe_info.name);
     if(fe_info.type != FE_QPSK){
         fprintf(stderr, "tuner is not BS/CS110(FE_QPSK)\n");
 		close(fefd);
@@ -481,7 +465,7 @@ lnb_control(int dev_num, int lnb_vol)
 	props.props = prop;
 	props.num = 1;
 	if (ioctl(fefd, FE_SET_PROPERTY, &props) < 0){
-		fprintf(stderr, "LNB control failed");
+		fprintf(stderr, "LNB control failed\n");
 		close(fefd);
         return 1;
     }
@@ -565,7 +549,7 @@ calc_cn(int fd, int type, boolean use_bell)
 					return;
 #ifdef DTV_STAT_SIGNAL_STRENGTH
 				}else{
-				    fprintf(stderr,"\rSNR0: %llu", prop[0].u.st.stat[0].uvalue);
+				    fprintf(stderr,"SNR0: %llu\n", prop[0].u.st.stat[0].uvalue);
 					return;
 				}
 #endif
@@ -573,7 +557,7 @@ calc_cn(int fd, int type, boolean use_bell)
 				if(tuner_type & EARTH_PT1)
 				    CNR = (double)rc / 256;		// 目算なので適当 "* 4 / 1000"かも
 				else{
-				    fprintf(stderr,"\rSNR: %d", rc);
+				    fprintf(stderr,"SNR: %d\n", rc);
 					return;
 				}
 		}else{
@@ -598,11 +582,11 @@ calc_cn(int fd, int type, boolean use_bell)
             bell = 2;
         else if(CNR < 15.0)
             bell = 1;
-        fprintf(stderr, "\rC/N = %fdB (SNR:%d)", CNR, rc);
+        fprintf(stderr, "C/N = %fdB (SNR:%d)\n", CNR, rc);
         do_bell(bell);
     }
     else {
-        fprintf(stderr, "\rC/N = %fdB (SNR:%d)", CNR, rc);
+        fprintf(stderr, "C/N = %fdB (SNR:%d)\n", CNR, rc);
     }
     return;
 }
@@ -610,61 +594,13 @@ calc_cn(int fd, int type, boolean use_bell)
 void
 show_channels(void)
 {
-	FILE *f;
-	char *home;
-	char buf[255], filename[255];
-
 	fprintf(stderr, "Available Channels:\n");
-
-	home = getenv("HOME");
-	sprintf(filename, "%s/.recpt1-channels", home);
-	f = fopen(filename, "r");
-	if(f) {
-		while(fgets(buf, 255, f))
-			fprintf(stderr, "%s", buf);
-		fclose(f);
-	}
-	else
-		fprintf(stderr, "13-62: Terrestrial Channels\n");
-
-	fprintf(stderr, "101ch: NHK BS1\n");
-	fprintf(stderr, "103ch: NHK BS Premium\n");
-	fprintf(stderr, "141ch: BS Nittele\n");
-	fprintf(stderr, "151ch: BS Asahi\n");
-	fprintf(stderr, "161ch: BS-TBS\n");
-	fprintf(stderr, "171ch: BS Japan\n");
-	fprintf(stderr, "181ch: BS Fuji\n");
-	fprintf(stderr, "191ch: WOWOW Prime\n");
-	fprintf(stderr, "192ch: WOWOW Live\n");
-	fprintf(stderr, "193ch: WOWOW Cinema\n");
-	fprintf(stderr, "200ch: Star Channel1\n");
-	fprintf(stderr, "201ch: Star Channel2\n");
-	fprintf(stderr, "202ch: Star Channel3\n");
-	fprintf(stderr, "211ch: BS11\n");
-	fprintf(stderr, "222ch: TwellV\n");
-	fprintf(stderr, "231ch: Housou Daigaku 1\n");
-	fprintf(stderr, "232ch: Housou Daigaku 2\n");
-	fprintf(stderr, "233ch: Housou Daigaku 3\n");
-	fprintf(stderr, "234ch: Green Channel\n");
-	fprintf(stderr, "236ch: BS Animax\n");
-	fprintf(stderr, "238ch: FOX Sports & Entertainment\n");
-	fprintf(stderr, "241ch: BS SkyPer!\n");
-	fprintf(stderr, "242ch: J SPORTS 1\n");
-	fprintf(stderr, "243ch: J SPORTS 2\n");
-	fprintf(stderr, "244ch: J SPORTS 3\n");
-	fprintf(stderr, "245ch: J SPORTS 4\n");
-	fprintf(stderr, "251ch: BS Tsuri Vision\n");
-	fprintf(stderr, "252ch: Cinefil WOWOW\n");
-	fprintf(stderr, "255ch: Nihon Eiga Senmon Channel\n");
-	fprintf(stderr, "256ch: Disney Channel\n");
-	fprintf(stderr, "258ch: Dlife\n");
-	fprintf(stderr, "531ch: Housou Daigaku Radio\n");
+	fprintf(stderr, "13-62: Terrestrial Channels\n");
 	fprintf(stderr, "C13-C63: CATV Channels\n");
+	fprintf(stderr, "BS1_0-BS23_1: BS Channels\n");
 	fprintf(stderr, "CS2-CS24: CS Channels\n");
-	fprintf(stderr, "BS1_0-BS23_1: BS Channels(Transport)\n");
-	fprintf(stderr, "0x4000-0x7FFF: BS/CS Channels(TSID)\n");
+	fprintf(stderr, "0x4000-0x7FFF: Satellite Channels(TSID)\n");
 }
-
 
 int
 parse_time(char *rectimestr, int *recsec)

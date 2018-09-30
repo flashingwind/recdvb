@@ -4,6 +4,7 @@
 
 #define CHTYPE_SATELLITE    0        /* satellite digital */
 #define CHTYPE_GROUND       1        /* terrestrial digital */
+#define MAX_CH				256
 #define MAX_QUEUE           8192
 #define MAX_READ_SIZE       (188 * 87) /* 188*87=16356 splitterが188アライメントを期待しているのでこの数字とする*/
 #define WRITE_SIZE          (1024 * 1024 * 2)
@@ -27,12 +28,17 @@ typedef struct _QUEUE_T {
     BUFSZ *buffer[1];    // バッファポインタ
 } QUEUE_T;
 
-typedef struct _ISDB_T_FREQ_CONV_TABLE {
-    int set_freq;    // 実際にioctl()を行う値
-    int type;        // チャンネルタイプ
-    int add_freq;    // 追加する周波数(BS/CSの場合はスロット番号)
+typedef struct _ISDB_FREQ_CONV_TABLE {
+	char channel[16];	// チャンネル
+    int freq_no;		// 周波数番号
     unsigned int tsid;  // transport_stream_id
-    char *parm_freq;    // パラメータで受ける値
-} ISDB_T_FREQ_CONV_TABLE;
+} ISDB_FREQ_CONV_TABLE;
+
+typedef struct _CHANNEL_SET {
+    char parm_freq[16];	// パラメータで受ける値
+    int freq_no;		// 周波数番号
+    int type;			// チャンネルタイプ
+    unsigned int tsid;  // transport_stream_id
+} CHANNEL_SET;
 
 #endif
