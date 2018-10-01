@@ -43,6 +43,7 @@
 #define MSGSZ     255
 
 /* globals */
+pthread_mutex_t mutex;
 extern boolean f_exit;
 void stream_start(thread_data *tdata);
 void stream_stop(thread_data *tdata);
@@ -73,12 +74,12 @@ void read_line(int socket, char *p){
 void *
 mq_recv(void *t)
 {
-    CHANNEL_SET *table = NULL;
+    CHANNEL_SET stock, *table;
     thread_data *tdata = (thread_data *)t;
     message_buf rbuf;
     char channel[16];
 	char service_id[32] = {0};
-    int recsec = 0, time_to_add = 0;
+    int r, recsec = 0, time_to_add = 0;
 
     while(1) {
         if(msgrcv(tdata->msqid, &rbuf, MSGSZ, 1, 0) < 0) {
@@ -87,35 +88,39 @@ mq_recv(void *t)
 
 		sscanf(rbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, &recsec, &time_to_add, service_id);
 
-	    CHANNEL_SET stock = tdata->table[0];
-		boolean tbl_stat = tdata->table == &channel_set ? TRUE : FALSE;
-		if((table = searchrecoff(channel)) != NULL){
-	        if(strcmp(table->parm_freq, stock.parm_freq)) {
-				strcpy(channel, table->parm_freq);
+	    stock = *(tdata->table);
+	    table = searchrecoff(channel);
+	    if (!table) {
+	    	if(channel[0] != '0' || channel[1] != '\0')
+		    	fprintf(stderr, "Invalid Channel: %s\n", channel);
+	    	goto CHECK_TIME_TO_ADD;
+	    }
+        if(strcmp(table->parm_freq, stock.parm_freq)) {
+            if (table->type != stock.type) {
+                /* re-open device */
+                tdata->table = &stock;
 
-	            /* wait for remainder */
-	            while(tdata->queue->num_used > 0) {
-	                usleep(10000);
-	            }
-	            if (table->type != stock.type) {
-	                /* re-open device */
-	                tdata->table = &stock;
-	                if(close_tuner(tdata) != 0)
-	                    return NULL;
-
+                pthread_mutex_lock(&mutex);
+                r = close_tuner(tdata);
+                if(r == 0) {
+		        	/* wait for remainder */
+	            	while(tdata->queue->num_used > 0) {
+	            	    usleep(10000);
+	            	}
 	                tune(channel, tdata, -1);
-	            } else {
-		            tdata->table = table;
-	                /* SET_CHANNEL only */
-	                if(set_frequency(tdata, FALSE)) {
-	                    fprintf(stderr, "Cannot tune to the specified channel\n");
-	                    goto CHECK_TIME_TO_ADD;
-	                }
-	                calc_cn(tdata->fefd, tdata->table->type, FALSE);
-	            }
-			}else
-			if(tbl_stat && table == &channel_set)
-				channel_set = stock;
+            	}
+                pthread_mutex_unlock(&mutex);
+
+                if(r != 0)
+                    return NULL;
+            } else {
+                /* SET_CHANNEL only */
+                if(set_frequency(tdata, FALSE)) {
+                    fprintf(stderr, "Cannot tune to the specified channel\n");
+                    goto CHECK_TIME_TO_ADD;
+                }
+                calc_cn(tdata->fefd, tdata->table->type, FALSE);
+            }
         }
 
 CHECK_TIME_TO_ADD:
@@ -1030,6 +1035,10 @@ while(1){	// http-server add-
         }
     }
 	}	// http-server add
+
+    /* initialize mutex */
+	pthread_mutex_init(&mutex, NULL);
+
     /* prepare thread data */
     tdata.queue = p_queue;
     tdata.decoder = decoder;
@@ -1067,7 +1076,9 @@ while(1){	// http-server add-
             f_exit = TRUE;
             break;
         }
+        pthread_mutex_lock(&mutex);
         bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
+        pthread_mutex_unlock(&mutex);
         if(bufptr->size <= 0) {
             if((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
                 f_exit = TRUE;
@@ -1094,14 +1105,16 @@ while(1){	// http-server add-
                     f_exit = TRUE;
                     break;
                 }
+                pthread_mutex_lock(&mutex);
                 bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
+                pthread_mutex_unlock(&mutex);
                 if(bufptr->size <= 0) {
                     f_exit = TRUE;
                     enqueue(p_queue, NULL);
                     break;
                 }
                 enqueue(p_queue, bufptr);
-            }while(cur_time == time(NULL)) ;
+            }while(cur_time == time(NULL));
 #endif
             break;
         }
@@ -1118,8 +1131,10 @@ while(1){	// http-server add-
     pthread_join(ipc_thread, NULL);
 
     /* close tuner */
-    if(close_tuner(&tdata) != 0)
-        return 1;
+    result = close_tuner(&tdata);
+
+    /* destroy mutex */
+	pthread_mutex_destroy(&mutex);
 
     /* release queue */
     destroy_queue(p_queue);
@@ -1156,6 +1171,6 @@ while(1){	// http-server add-
     }
 
 	if(!use_http)	// http-server add
-    return 0;
+    	return result;
 }	// http-server add
 }

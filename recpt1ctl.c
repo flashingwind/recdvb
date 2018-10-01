@@ -43,6 +43,7 @@ main(int argc, char **argv)
     message_buf sbuf;
     size_t buf_length;
 	char *sid_list = NULL;
+    char zero[2] = "0";
 
     int result;
     int option_index;
@@ -116,6 +117,8 @@ main(int argc, char **argv)
     }
 
     sbuf.mtype = 1;
+    if(!channel)
+    	channel = zero;
     sprintf(sbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, recsec, extsec, sid_list);
 
     buf_length = strlen(sbuf.mtext) + 1 ;

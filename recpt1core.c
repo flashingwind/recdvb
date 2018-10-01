@@ -107,7 +107,7 @@ searchrecoff(char *channel)
 	char ch[16];
     int i = 0, ch_no;
 
-	if(*channel == '\0' || strlen(channel) > 15)
+	if(!channel || *channel == '\0' || strlen(channel) > 15)
 		return NULL;
 
 	strcpy(ch, channel);
