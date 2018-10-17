@@ -1,23 +1,22 @@
-/* -*- tab-width: 4; indent-tabs-mode: nil -*- */
-#include <stdio.h>
+#include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <time.h>
+#include <getopt.h>
+#include <libgen.h>
+#include <math.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
-#include <math.h>
-#include <unistd.h>
-#include <getopt.h>
-#include <signal.h>
-#include <errno.h>
+#include <sys/stat.h>
 #include <sys/time.h>
-#include <ctype.h>
-#include <libgen.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
-#include <netdb.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <netinet/in.h>
 
 #include <sys/ipc.h>
@@ -26,13 +25,12 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
-//#include "pt1_ioctl.h"
 
 #include "config.h"
 #include "decoder.h"
-#include "recpt1core.h"
-#include "recpt1.h"
 #include "mkpath.h"
+#include "recpt1.h"
+#include "recpt1core.h"
 
 #include "tssplitter_lite.h"
 
@@ -40,27 +38,26 @@
 #define SIZE_CHANK 1316
 
 /* ipc message size */
-#define MSGSZ     255
+#define MSGSZ 255
 
 /* globals */
 pthread_mutex_t mutex;
 extern boolean f_exit;
-void stream_start(thread_data *tdata);
-void stream_stop(thread_data *tdata);
 
 //read 1st line from socket
-void read_line(int socket, char *p){
+void read_line(int socket, char *p)
+{
 	int i;
-	for (i=0; i < 255; i++){
+	for (i = 0; i < 255; i++) {
 		int ret;
 		ret = read(socket, p, 1);
-			if ( ret == -1 ){
-				perror("read");
-				exit(1);
-			} else if ( ret == 0 ){
-				break;
-			}
-		if ( *p == '\n' ){
+		if (ret == -1) {
+			perror("read");
+			exit(1);
+		} else if (ret == 0) {
+			break;
+		}
+		if (*p == '\n') {
 			p++;
 			break;
 		}
@@ -69,540 +66,514 @@ void read_line(int socket, char *p){
 	*p = '\0';
 }
 
-
 /* will be ipc message receive thread */
-void *
-mq_recv(void *t)
+void *mq_recv(void *t)
 {
-    CHANNEL_SET stock, *table;
-    thread_data *tdata = (thread_data *)t;
-    message_buf rbuf;
-    char channel[16];
+	CHANNEL_SET stock, *table;
+	thread_data *tdata = (thread_data *)t;
+	message_buf rbuf;
+	char channel[16];
 	char service_id[32] = {0};
-    int r, recsec = 0, time_to_add = 0;
+	int r, recsec = 0, time_to_add = 0;
 
-    while(1) {
-        if(msgrcv(tdata->msqid, &rbuf, MSGSZ, 1, 0) < 0) {
-            return NULL;
-        }
+	while (1) {
+		if (msgrcv(tdata->msqid, &rbuf, MSGSZ, 1, 0) < 0) {
+			return NULL;
+		}
 
 		sscanf(rbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, &recsec, &time_to_add, service_id);
 
-	    stock = *(tdata->table);
-	    table = searchrecoff(channel);
-	    if (!table) {
-	    	if(channel[0] != '0' || channel[1] != '\0')
-		    	fprintf(stderr, "Invalid Channel: %s\n", channel);
-	    	goto CHECK_TIME_TO_ADD;
-	    }
-        if(strcmp(table->parm_freq, stock.parm_freq)) {
-            if (table->type != stock.type) {
-                /* re-open device */
-                tdata->table = &stock;
+		stock = *(tdata->table);
+		table = searchrecoff(channel);
+		if (!table) {
+			if (channel[0] != '0' || channel[1] != '\0')
+				fprintf(stderr, "Invalid Channel: %s\n", channel);
+			goto CHECK_TIME_TO_ADD;
+		}
+		if (strcmp(table->parm_freq, stock.parm_freq)) {
+			if (table->type != stock.type) {
+				/* re-open device */
+				tdata->table = &stock;
 
-                pthread_mutex_lock(&mutex);
-                r = close_tuner(tdata);
-                if(r == 0) {
-		        	/* wait for remainder */
-	            	while(tdata->queue->num_used > 0) {
-	            	    usleep(10000);
-	            	}
-	                tune(channel, tdata, -1);
-            	}
-                pthread_mutex_unlock(&mutex);
+				pthread_mutex_lock(&mutex);
+				r = close_tuner(tdata);
+				if (r == 0) {
+					/* wait for remainder */
+					while (tdata->queue->num_used > 0) {
+						usleep(10000);
+					}
+					tune(channel, tdata, -1);
+				}
+				pthread_mutex_unlock(&mutex);
 
-                if(r != 0)
-                    return NULL;
-            } else {
-                /* SET_CHANNEL only */
-                if(set_frequency(tdata, FALSE)) {
-                    fprintf(stderr, "Cannot tune to the specified channel\n");
-                    goto CHECK_TIME_TO_ADD;
-                }
-                calc_cn(tdata->fefd, tdata->table->type, FALSE);
-            }
-        }
+				if (r != 0)
+					return NULL;
+			} else {
+				/* SET_CHANNEL only */
+				if (set_frequency(tdata, FALSE)) {
+					fprintf(stderr, "Cannot tune to the specified channel\n");
+					goto CHECK_TIME_TO_ADD;
+				}
+				calc_cn(tdata->fefd, tdata->table->type, FALSE);
+			}
+		}
 
-CHECK_TIME_TO_ADD:
-        if(time_to_add) {
-            tdata->recsec += time_to_add;
-            fprintf(stderr, "Extended %d sec\n", time_to_add);
-        }
+	CHECK_TIME_TO_ADD:
+		if (time_to_add) {
+			tdata->recsec += time_to_add;
+			fprintf(stderr, "Extended %d sec\n", time_to_add);
+		}
 
-        if(recsec) {
-            time_t cur_time;
-            time(&cur_time);
-            if(cur_time - tdata->start_time > recsec) {
-                f_exit = TRUE;
-            }
-            else {
-                tdata->recsec = recsec;
-                fprintf(stderr, "Total recording time = %d sec\n", recsec);
-            }
-        }
+		if (recsec) {
+			time_t cur_time;
+			time(&cur_time);
+			if (cur_time - tdata->start_time > recsec) {
+				f_exit = TRUE;
+			} else {
+				tdata->recsec = recsec;
+				fprintf(stderr, "Total recording time = %d sec\n", recsec);
+			}
+		}
 
-        if(f_exit)
-            return NULL;
-    }
+		if (f_exit)
+			return NULL;
+	}
 }
 
-
-QUEUE_T *
-create_queue(size_t size)
+QUEUE_T *create_queue(size_t size)
 {
-    QUEUE_T *p_queue;
-    int memsize = sizeof(QUEUE_T) + size * sizeof(BUFSZ*);
+	QUEUE_T *p_queue;
+	int memsize = sizeof(QUEUE_T) + size * sizeof(BUFSZ *);
 
-    p_queue = (QUEUE_T*)calloc(memsize, sizeof(char));
+	p_queue = (QUEUE_T *)calloc(memsize, sizeof(char));
 
-    if(p_queue != NULL) {
-        p_queue->size = size;
-        p_queue->num_avail = size;
-        p_queue->num_used = 0;
-        pthread_mutex_init(&p_queue->mutex, NULL);
-        pthread_cond_init(&p_queue->cond_avail, NULL);
-        pthread_cond_init(&p_queue->cond_used, NULL);
-    }
+	if (p_queue != NULL) {
+		p_queue->size = size;
+		p_queue->num_avail = size;
+		p_queue->num_used = 0;
+		pthread_mutex_init(&p_queue->mutex, NULL);
+		pthread_cond_init(&p_queue->cond_avail, NULL);
+		pthread_cond_init(&p_queue->cond_used, NULL);
+	}
 
-    return p_queue;
+	return p_queue;
 }
 
-void
-destroy_queue(QUEUE_T *p_queue)
+void destroy_queue(QUEUE_T *p_queue)
 {
-    if(!p_queue)
-        return;
+	if (!p_queue)
+		return;
 
-    pthread_mutex_destroy(&p_queue->mutex);
-    pthread_cond_destroy(&p_queue->cond_avail);
-    pthread_cond_destroy(&p_queue->cond_used);
-    free(p_queue);
+	pthread_mutex_destroy(&p_queue->mutex);
+	pthread_cond_destroy(&p_queue->cond_avail);
+	pthread_cond_destroy(&p_queue->cond_used);
+	free(p_queue);
 }
 
 /* enqueue data. this function will block if queue is full. */
-void
-enqueue(QUEUE_T *p_queue, BUFSZ *data)
+void enqueue(QUEUE_T *p_queue, BUFSZ *data)
 {
-    struct timeval now;
-    struct timespec spec;
-    int retry_count = 0;
+	struct timeval now;
+	struct timespec spec;
+	int retry_count = 0;
 
-    pthread_mutex_lock(&p_queue->mutex);
-    /* entered critical section */
+	/* enter critical section */
+	pthread_mutex_lock(&p_queue->mutex);
 
-    /* wait while queue is full */
-    while(p_queue->num_avail == 0) {
+	/* wait while queue is full */
+	while (p_queue->num_avail == 0) {
+		gettimeofday(&now, NULL);
+		spec.tv_sec = now.tv_sec + 1;
+		spec.tv_nsec = now.tv_usec * 1000;
 
-        gettimeofday(&now, NULL);
-        spec.tv_sec = now.tv_sec + 1;
-        spec.tv_nsec = now.tv_usec * 1000;
+		pthread_cond_timedwait(&p_queue->cond_avail,
+							   &p_queue->mutex, &spec);
+		retry_count++;
+		if (retry_count > 60) {
+			f_exit = TRUE;
+		}
+		if (f_exit) {
+			pthread_mutex_unlock(&p_queue->mutex);
+			return;
+		}
+	}
 
-        pthread_cond_timedwait(&p_queue->cond_avail,
-                               &p_queue->mutex, &spec);
-        retry_count++;
-        if(retry_count > 60) {
-            f_exit = TRUE;
-        }
-        if(f_exit) {
-            pthread_mutex_unlock(&p_queue->mutex);
-            return;
-        }
-    }
+	p_queue->buffer[p_queue->in] = data;
 
-    p_queue->buffer[p_queue->in] = data;
+	/* move position marker for input to next position */
+	p_queue->in++;
+	p_queue->in %= p_queue->size;
 
-    /* move position marker for input to next position */
-    p_queue->in++;
-    p_queue->in %= p_queue->size;
+	/* update counters */
+	p_queue->num_avail--;
+	p_queue->num_used++;
 
-    /* update counters */
-    p_queue->num_avail--;
-    p_queue->num_used++;
-
-    /* leaving critical section */
-    pthread_mutex_unlock(&p_queue->mutex);
-    pthread_cond_signal(&p_queue->cond_used);
+	/* leave critical section */
+	pthread_mutex_unlock(&p_queue->mutex);
+	pthread_cond_signal(&p_queue->cond_used);
 }
 
 /* dequeue data. this function will block if queue is empty. */
-BUFSZ *
-dequeue(QUEUE_T *p_queue)
+BUFSZ *dequeue(QUEUE_T *p_queue)
 {
-    struct timeval now;
-    struct timespec spec;
-    BUFSZ *buffer;
-    int retry_count = 0;
+	struct timeval now;
+	struct timespec spec;
+	BUFSZ *buffer;
+	int retry_count = 0;
 
-    pthread_mutex_lock(&p_queue->mutex);
-    /* entered the critical section*/
+	/* enter the critical section*/
+	pthread_mutex_lock(&p_queue->mutex);
 
-    /* wait while queue is empty */
-    while(p_queue->num_used == 0) {
+	/* wait while queue is empty */
+	while (p_queue->num_used == 0) {
+		gettimeofday(&now, NULL);
+		spec.tv_sec = now.tv_sec + 1;
+		spec.tv_nsec = now.tv_usec * 1000;
 
-        gettimeofday(&now, NULL);
-        spec.tv_sec = now.tv_sec + 1;
-        spec.tv_nsec = now.tv_usec * 1000;
+		pthread_cond_timedwait(&p_queue->cond_used,
+							   &p_queue->mutex, &spec);
+		retry_count++;
+		if (retry_count > 60) {
+			f_exit = TRUE;
+		}
+		if (f_exit) {
+			pthread_mutex_unlock(&p_queue->mutex);
+			return NULL;
+		}
+	}
 
-        pthread_cond_timedwait(&p_queue->cond_used,
-                               &p_queue->mutex, &spec);
-        retry_count++;
-        if(retry_count > 60) {
-            f_exit = TRUE;
-        }
-        if(f_exit) {
-            pthread_mutex_unlock(&p_queue->mutex);
-            return NULL;
-        }
-    }
+	/* take buffer address */
+	buffer = p_queue->buffer[p_queue->out];
 
-    /* take buffer address */
-    buffer = p_queue->buffer[p_queue->out];
+	/* move position marker for output to next position */
+	p_queue->out++;
+	p_queue->out %= p_queue->size;
 
-    /* move position marker for output to next position */
-    p_queue->out++;
-    p_queue->out %= p_queue->size;
+	/* update counters */
+	p_queue->num_avail++;
+	p_queue->num_used--;
 
-    /* update counters */
-    p_queue->num_avail++;
-    p_queue->num_used--;
+	/* leave the critical section */
+	pthread_mutex_unlock(&p_queue->mutex);
+	pthread_cond_signal(&p_queue->cond_avail);
 
-    /* leaving the critical section */
-    pthread_mutex_unlock(&p_queue->mutex);
-    pthread_cond_signal(&p_queue->cond_avail);
-
-    return buffer;
+	return buffer;
 }
 
 /* this function will be reader thread */
-void *
-reader_func(void *p)
+void *reader_func(void *p)
 {
-    thread_data *tdata = (thread_data *)p;
-    QUEUE_T *p_queue = tdata->queue;
-    decoder *dec = tdata->decoder;
-    splitter *splitter = tdata->splitter;
-    int wfd = tdata->wfd;
-    boolean use_b25 = dec ? TRUE : FALSE;
-    boolean use_udp = tdata->sock_data ? TRUE : FALSE;
-    boolean fileless = FALSE;
-    boolean use_splitter = splitter ? TRUE : FALSE;
-    int sfd = -1;
-    pthread_t signal_thread = tdata->signal_thread;
-//    struct sockaddr_in *addr = NULL;
-    BUFSZ *qbuf;
-    static splitbuf_t splitbuf;
-    ARIB_STD_B25_BUFFER dbuf, buf;
-    int code;
-    int split_select_finish = TSS_ERROR;
+	thread_data *tdata = (thread_data *)p;
+	QUEUE_T *p_queue = tdata->queue;
+	decoder *dec = tdata->decoder;
+	splitter *splitter = tdata->splitter;
+	int wfd = tdata->wfd;
+	boolean use_b25 = dec ? TRUE : FALSE;
+	boolean use_udp = tdata->sock_data ? TRUE : FALSE;
+	boolean fileless = FALSE;
+	boolean use_splitter = splitter ? TRUE : FALSE;
+	int sfd = -1;
+	pthread_t signal_thread = tdata->signal_thread;
+	BUFSZ *qbuf;
+	static splitbuf_t splitbuf;
+	ARIB_STD_B25_BUFFER dbuf, buf;
+	int code;
+	int split_select_finish = TSS_ERROR;
 
-    buf.size = 0;
-    buf.data = NULL;
-    splitbuf.buffer_size = 0;
-    splitbuf.buffer = NULL;
+	buf.size = 0;
+	buf.data = NULL;
+	splitbuf.buffer_size = 0;
+	splitbuf.buffer = NULL;
 
-    if(wfd == -1)
-        fileless = TRUE;
+	if (wfd == -1)
+		fileless = TRUE;
 
-    if(use_udp) {
-        sfd = tdata->sock_data->sfd;
-//        addr = &tdata->sock_data->addr;
-    }
+	if (use_udp) {
+		sfd = tdata->sock_data->sfd;
+	}
 
-    while(1) {
-        ssize_t wc = 0;
-        int file_err = 0;
-        qbuf = dequeue(p_queue);
-        /* no entry in the queue */
-        if(qbuf == NULL) {
-            break;
-        }
+	while (1) {
+		ssize_t wc = 0;
+		int file_err = 0;
+		qbuf = dequeue(p_queue);
+		/* no entry in the queue */
+		if (qbuf == NULL) {
+			break;
+		}
 
-        buf.data = qbuf->buffer;
-        buf.size = qbuf->size;
+		buf.data = qbuf->buffer;
+		buf.size = qbuf->size;
 
-        if(use_splitter) {
-            splitbuf.buffer_filled = 0;
+		if (use_splitter) {
+			splitbuf.buffer_filled = 0;
 
-            /* allocate split buffer */
-            if(splitbuf.buffer_size < buf.size && buf.size > 0) {
-                splitbuf.buffer = (u_char *)realloc(splitbuf.buffer, buf.size);
-                if(splitbuf.buffer == NULL) {
-                    fprintf(stderr, "split buffer allocation failed\n");
-                    use_splitter = FALSE;
-                    goto fin;
-                }
-            }
+			/* allocate split buffer */
+			if (splitbuf.buffer_size < buf.size && buf.size > 0) {
+				splitbuf.buffer = (u_char *)realloc(splitbuf.buffer, buf.size);
+				if (splitbuf.buffer == NULL) {
+					fprintf(stderr, "split buffer allocation failed\n");
+					use_splitter = FALSE;
+					goto fin;
+				}
+			}
 
-            while(buf.size) {
-                /* 分離対象PIDの抽出 */
-                if(split_select_finish != TSS_SUCCESS) {
-                    split_select_finish = split_select(splitter, &buf);
-                    if(split_select_finish == TSS_NULL) {
-                        /* mallocエラー発生 */
-                        fprintf(stderr, "split_select malloc failed\n");
-                        use_splitter = FALSE;
-                        goto fin;
-                    }
-                    else if(split_select_finish != TSS_SUCCESS) {
-                        /* 分離対象PIDが完全に抽出できるまで出力しない
+			while (buf.size) {
+				/* 分離対象PIDの抽出 */
+				if (split_select_finish != TSS_SUCCESS) {
+					split_select_finish = split_select(splitter, &buf);
+					if (split_select_finish == TSS_NULL) {
+						/* mallocエラー発生 */
+						fprintf(stderr, "split_select malloc failed\n");
+						use_splitter = FALSE;
+						goto fin;
+					} else if (split_select_finish != TSS_SUCCESS) {
+						/* 分離対象PIDが完全に抽出できるまで出力しない
                          * 1秒程度余裕を見るといいかも
                          */
-                        time_t cur_time;
-                        time(&cur_time);
-                        if(cur_time - tdata->start_time > 4) {
-                            use_splitter = FALSE;
-                            goto fin;
-                        }
-                        break;
-                    }
-                }
+						time_t cur_time;
+						time(&cur_time);
+						if (cur_time - tdata->start_time > 4) {
+							use_splitter = FALSE;
+							goto fin;
+						}
+						break;
+					}
+				}
 
-                /* 分離対象以外をふるい落とす */
-                code = split_ts(splitter, &buf, &splitbuf);
-                if(code == TSS_NULL) {
-                    fprintf(stderr, "PMT reading..\n");
-                }
-                else if(code != TSS_SUCCESS) {
-                    fprintf(stderr, "split_ts failed\n");
-                    break;
-                }
+				/* 分離対象以外をふるい落とす */
+				code = split_ts(splitter, &buf, &splitbuf);
+				if (code == TSS_NULL) {
+					fprintf(stderr, "PMT reading..\n");
+				} else if (code != TSS_SUCCESS) {
+					fprintf(stderr, "split_ts failed\n");
+					break;
+				}
 
-                break;
-            } /* while */
+				break;
+			} /* while */
 
-            buf.size = splitbuf.buffer_filled;
-            buf.data = splitbuf.buffer;
-        fin:
-            ;
-        } /* if */
+			buf.data = splitbuf.buffer;
+			buf.size = splitbuf.buffer_filled;
 
+		fin:;
+		} /* if */
 
-        if(use_b25) {
-            int lp = 0;
+		if (use_b25) {
+			int lp = 0;
 
-            while(1){
-	            code = b25_decode(dec, &buf, &dbuf);
-	            if(code < 0) {
+			while (1) {
+				code = b25_decode(dec, &buf, &dbuf);
+				if (code < 0) {
 					fprintf(stderr, "b25_decode failed (code=%d).", code);
-	                if(lp++ < 5){
+					if (lp++ < 5) {
 						//decoder restart
 						fprintf(stderr, "\ndecoder restart! \n");
 						b25_shutdown(dec);
 						b25_startup(tdata->dopt);
-					}else{
-		                fprintf(stderr, " fall back to encrypted recording.\n");
-		                use_b25 = FALSE;
-		                break;
-		            }
-	            }else{
-	                buf = dbuf;
-		            break;
-		        }
-	        }
-        }
+					} else {
+						fprintf(stderr, " fall back to encrypted recording.\n");
+						use_b25 = FALSE;
+						break;
+					}
+				} else {
+					buf = dbuf;
+					break;
+				}
+			}
+		}
 
+		if (!fileless) {
+			/* write data to output file */
+			int size_remain = buf.size;
+			int offset = 0;
 
-        if(!fileless) {
-            /* write data to output file */
-            int size_remain = buf.size;
-            int offset = 0;
+			while (size_remain > 0) {
+				int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
 
-            while(size_remain > 0) {
-                int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
+				wc = write(wfd, buf.data + offset, ws);
+				if (wc < 0) {
+					perror("write");
+					file_err = 1;
+					pthread_kill(signal_thread,
+								 errno == EPIPE ? SIGPIPE : SIGUSR2);
+					break;
+				}
+				size_remain -= wc;
+				offset += wc;
+			}
+		}
 
-                wc = write(wfd, buf.data + offset, ws);
-                if(wc < 0) {
-                    perror("write");
-                    file_err = 1;
-                    pthread_kill(signal_thread,
-                                 errno == EPIPE ? SIGPIPE : SIGUSR2);
-                    break;
-                }
-                size_remain -= wc;
-                offset += wc;
-            }
-        }
+		if (use_udp && sfd != -1) {
+			/* write data to socket */
+			int size_remain = buf.size;
+			int offset = 0;
+			while (size_remain > 0) {
+				int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
+				wc = write(sfd, buf.data + offset, ws);
+				if (wc < 0) {
+					if (errno == EPIPE)
+						pthread_kill(signal_thread, SIGPIPE);
+					break;
+				}
+				size_remain -= wc;
+				offset += wc;
+			}
+		}
 
-        if(use_udp && sfd != -1) {
-            /* write data to socket */
-            int size_remain = buf.size;
-            int offset = 0;
-            while(size_remain > 0) {
-                int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
-                wc = write(sfd, buf.data + offset, ws);
-                if(wc < 0) {
-                    if(errno == EPIPE)
-                        pthread_kill(signal_thread, SIGPIPE);
-                    break;
-                }
-                size_remain -= wc;
-                offset += wc;
-            }
-        }
+		free(qbuf);
+		qbuf = NULL;
 
-        free(qbuf);
-        qbuf = NULL;
+		/* normal exit */
+		if ((f_exit && !p_queue->num_used) || file_err) {
+			if (use_splitter) {
+				free(splitbuf.buffer);
+				splitbuf.buffer = NULL;
+				splitbuf.buffer_size = 0;
+			}
 
-        /* normal exit */
-        if((f_exit && !p_queue->num_used) || file_err) {
+			if (use_b25) {
+				code = b25_finish(dec, &dbuf);
+				if (code < 0)
+					fprintf(stderr, "b25_finish failed\n");
+				else
+					buf = dbuf;
+			}
 
-            if(use_splitter) {
-                free(splitbuf.buffer);
-                splitbuf.buffer = NULL;
-                splitbuf.buffer_size = 0;
-            }
+			if (!fileless && !file_err) {
+				wc = write(wfd, buf.data, buf.size);
+				if (wc < 0) {
+					perror("write");
+					file_err = 1;
+					pthread_kill(signal_thread,
+								 errno == EPIPE ? SIGPIPE : SIGUSR2);
+				}
+			}
 
-            if(use_b25) {
-                code = b25_finish(dec, &dbuf);
-                if(code < 0)
-                    fprintf(stderr, "b25_finish failed\n");
-                else
-                    buf = dbuf;
-            }
+			if (use_udp && sfd != -1) {
+				wc = write(sfd, buf.data, buf.size);
+				if (wc < 0) {
+					if (errno == EPIPE)
+						pthread_kill(signal_thread, SIGPIPE);
+				}
+			}
 
-            if(!fileless && !file_err) {
-                wc = write(wfd, buf.data, buf.size);
-                if(wc < 0) {
-                    perror("write");
-                    file_err = 1;
-                    pthread_kill(signal_thread,
-                                 errno == EPIPE ? SIGPIPE : SIGUSR2);
-                }
-            }
+			break;
+		}
+	}
 
-            if(use_udp && sfd != -1) {
-                wc = write(sfd, buf.data, buf.size);
-                if(wc < 0) {
-                    if(errno == EPIPE)
-                        pthread_kill(signal_thread, SIGPIPE);
-                }
-            }
+	time_t cur_time;
+	time(&cur_time);
+	fprintf(stderr, "Recorded %dsec\n",
+			(int)(cur_time - tdata->start_time));
 
-            break;
-        }
-    }
-
-    time_t cur_time;
-    time(&cur_time);
-    fprintf(stderr, "Recorded %dsec\n",
-            (int)(cur_time - tdata->start_time));
-
-    return NULL;
+	return NULL;
 }
 
-void
-show_usage(char *cmd)
+void show_usage(char *cmd)
 {
-    fprintf(stderr, "%s Ver %s\n", cmd, version);
+	fprintf(stderr, "%s Ver %s\n", cmd, version);
 #ifdef HAVE_LIBARIBB25
-    fprintf(stderr, "Usage: \n%s [--b25 [--strip] [--emm] [--round N]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+	fprintf(stderr, "Usage: \n%s [--b25 [--strip] [--emm] [--round N]] [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #else
-    fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
+	fprintf(stderr, "Usage: \n%s [--udp [--addr hostname --port portnumber]] [--http portnumber] [--dev devicenumber] [--lnb voltage] [--sid SID1,SID2] channel rectime destfile\n", cmd);
 #endif
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Remarks:\n");
-    fprintf(stderr, "if rectime  is '-', records indefinitely.\n");
-    fprintf(stderr, "if destfile is '-', stdout is used for output.\n");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "LNB control: %s --dev devicenumber --lnb voltage\n", cmd);
+	fprintf(stderr, "\n");
+	fprintf(stderr, "Remarks:\n");
+	fprintf(stderr, "if rectime  is '-', records indefinitely.\n");
+	fprintf(stderr, "if destfile is '-', stdout is used for output.\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "LNB control: %s --dev devicenumber --lnb voltage\n", cmd);
 }
 
-void
-show_options(void)
+void show_options(void)
 {
-    fprintf(stderr, "Options:\n");
+	fprintf(stderr, "Options:\n");
 #ifdef HAVE_LIBARIBB25
-    fprintf(stderr, "--b25:               Decrypt using BCAS card\n");
-    fprintf(stderr, "  --strip:           Strip null stream\n");
-    fprintf(stderr, "  --emm:             Instruct EMM operation\n");
-    fprintf(stderr, "  --round N:         Specify round number\n");
+	fprintf(stderr, "--b25:               Decrypt using BCAS card\n");
+	fprintf(stderr, "  --strip:           Strip null stream\n");
+	fprintf(stderr, "  --emm:             Instruct EMM operation\n");
+	fprintf(stderr, "  --round N:         Specify round number\n");
 #endif
-    fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
-    fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
-    fprintf(stderr, "  --port portnumber: Port number to connect\n");
-    fprintf(stderr, "--http portnumber:   Turn on http broadcasting (run as a daemon)\n");
-    fprintf(stderr, "--dev N:             Use DVB device /dev/dvb/adapterN\n");
-    fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
-    fprintf(stderr, "--sid SID1,SID2,...: Specify SID number in CSV format (101,102,...)\n");
-    fprintf(stderr, "--help:              Show this help\n");
-    fprintf(stderr, "--version:           Show version\n");
-    fprintf(stderr, "--list:              Show channel list\n");
+	fprintf(stderr, "--udp:               Turn on udp broadcasting\n");
+	fprintf(stderr, "  --addr hostname:   Hostname or address to connect\n");
+	fprintf(stderr, "  --port portnumber: Port number to connect\n");
+	fprintf(stderr, "--http portnumber:   Turn on http broadcasting (run as a daemon)\n");
+	fprintf(stderr, "--dev N:             Use DVB device /dev/dvb/adapterN\n");
+	fprintf(stderr, "--lnb voltage:       Specify LNB voltage (0, 11, 15)\n");
+	fprintf(stderr, "--sid SID1,SID2,...: Specify SID number in CSV format (101,102,...)\n");
+	fprintf(stderr, "--help:              Show this help\n");
+	fprintf(stderr, "--version:           Show version\n");
+	fprintf(stderr, "--list:              Show channel list\n");
 }
 
-void
-cleanup(thread_data *tdata)
+void cleanup(thread_data *tdata)
 {
-    /* stop recording */
-//	stream_stop(tdata);
+	/* stop recording */
+	f_exit = TRUE;
 
-    f_exit = TRUE;
-
-    pthread_cond_signal(&tdata->queue->cond_avail);
-    pthread_cond_signal(&tdata->queue->cond_used);
+	pthread_cond_signal(&tdata->queue->cond_avail);
+	pthread_cond_signal(&tdata->queue->cond_used);
 }
 
 /* will be signal handler thread */
-void *
-process_signals(void *t)
+void *process_signals(void *t)
 {
-    sigset_t waitset;
-    int sig;
-    thread_data *tdata = (thread_data *)t;
+	sigset_t waitset;
+	int sig;
+	thread_data *tdata = (thread_data *)t;
 
-    sigemptyset(&waitset);
-    sigaddset(&waitset, SIGPIPE);
-    sigaddset(&waitset, SIGINT);
-    sigaddset(&waitset, SIGTERM);
-    sigaddset(&waitset, SIGUSR1);
-    sigaddset(&waitset, SIGUSR2);
+	sigemptyset(&waitset);
+	sigaddset(&waitset, SIGPIPE);
+	sigaddset(&waitset, SIGINT);
+	sigaddset(&waitset, SIGTERM);
+	sigaddset(&waitset, SIGUSR1);
+	sigaddset(&waitset, SIGUSR2);
 
-    sigwait(&waitset, &sig);
+	sigwait(&waitset, &sig);
 
-    switch(sig) {
-    case SIGPIPE:
-        fprintf(stderr, "\nSIGPIPE received. cleaning up...\n");
-        cleanup(tdata);
-        break;
-    case SIGINT:
-        fprintf(stderr, "\nSIGINT received. cleaning up...\n");
-        cleanup(tdata);
-        break;
-    case SIGTERM:
-        fprintf(stderr, "\nSIGTERM received. cleaning up...\n");
-        cleanup(tdata);
-        break;
-    case SIGUSR1: /* normal exit*/
-        cleanup(tdata);
-        break;
-    case SIGUSR2: /* error */
-        fprintf(stderr, "Detected an error. cleaning up...\n");
-        cleanup(tdata);
-        break;
-    }
+	switch (sig) {
+		case SIGPIPE:
+			fprintf(stderr, "\nSIGPIPE received. cleaning up...\n");
+			cleanup(tdata);
+			break;
+		case SIGINT:
+			fprintf(stderr, "\nSIGINT received. cleaning up...\n");
+			cleanup(tdata);
+			break;
+		case SIGTERM:
+			fprintf(stderr, "\nSIGTERM received. cleaning up...\n");
+			cleanup(tdata);
+			break;
+		case SIGUSR1: /* normal exit*/
+			cleanup(tdata);
+			break;
+		case SIGUSR2: /* error */
+			fprintf(stderr, "Detected an error. cleaning up...\n");
+			cleanup(tdata);
+			break;
+	}
 
-    return NULL; /* dummy */
+	return NULL; /* dummy */
 }
 
-void
-init_signal_handlers(pthread_t *signal_thread, thread_data *tdata)
+void init_signal_handlers(pthread_t *signal_thread, thread_data *tdata)
 {
-    sigset_t blockset;
+	sigset_t blockset;
 
-    sigemptyset(&blockset);
-    sigaddset(&blockset, SIGPIPE);
-    sigaddset(&blockset, SIGINT);
-    sigaddset(&blockset, SIGTERM);
-    sigaddset(&blockset, SIGUSR1);
-    sigaddset(&blockset, SIGUSR2);
+	sigemptyset(&blockset);
+	sigaddset(&blockset, SIGPIPE);
+	sigaddset(&blockset, SIGINT);
+	sigaddset(&blockset, SIGTERM);
+	sigaddset(&blockset, SIGUSR1);
+	sigaddset(&blockset, SIGUSR2);
 
-    if(pthread_sigmask(SIG_BLOCK, &blockset, NULL))
-        fprintf(stderr, "pthread_sigmask() failed.\n");
+	if (pthread_sigmask(SIG_BLOCK, &blockset, NULL))
+		fprintf(stderr, "pthread_sigmask() failed.\n");
 
-    pthread_create(signal_thread, NULL, process_signals, tdata);
+	pthread_create(signal_thread, NULL, process_signals, tdata);
 }
 
-int
-set_ch_table(void)
+int set_ch_table(void)
 {
 	FILE *fp;
 	char *p, buf[256];
@@ -614,41 +585,39 @@ set_ch_table(void)
 	strcat(buf, ".conf");
 
 	fp = fopen(buf, "r");
-	if (fp == NULL)
-	{
+	if (fp == NULL) {
 		fprintf(stderr, "Cannot open '%s'\n", buf);
 		return 1;
 	}
 
 	int i = 0;
 	len = sizeof(isdb_conv_table[0].channel) - 1;
-	while(fgets(buf, sizeof(buf), fp) && i < MAX_CH - 1) {
-		if(buf[0] == ';')
+	while (fgets(buf, sizeof(buf), fp) && i < MAX_CH - 1) {
+		if (buf[0] == ';')
 			continue;
 		p = buf + strlen(buf) - 1;
-		while((p >= buf) && (*p == '\r' || *p == '\n'))
+		while ((p >= buf) && (*p == '\r' || *p == '\n'))
 			*p-- = '\0';
-		if(p < buf)
+		if (p < buf)
 			continue;
 
 		int n = 0;
 		char *cp[3];
 		boolean bOk = FALSE;
 		p = cp[n++] = buf;
-		while(1) {
+		while (1) {
 			p = strchr(p, '\t');
-			if(p) {
+			if (p) {
 				*p++ = '\0';
 				cp[n++] = p;
-				if(n > 2) {
+				if (n > 2) {
 					bOk = TRUE;
 					break;
 				}
-			}
-			else
+			} else
 				break;
 		}
-		if(bOk) {
+		if (bOk) {
 			strncpy(isdb_conv_table[i].channel, cp[0], len);
 			isdb_conv_table[i].channel[len] = '\0';
 			modify_ch_str(isdb_conv_table[i].channel);
@@ -665,512 +634,504 @@ set_ch_table(void)
 	return 0;
 }
 
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
-    time_t cur_time;
-    pthread_t signal_thread;
-    pthread_t reader_thread;
-    pthread_t ipc_thread;
-    QUEUE_T *p_queue = create_queue(MAX_QUEUE);
-    BUFSZ   *bufptr;
-    decoder *decoder = NULL;
-    splitter *splitter = NULL;
-    static thread_data tdata;
-    decoder_options dopt = {
-        4,  /* round */
-        0,  /* strip */
-        0   /* emm */
-    };
-    tdata.dopt = &dopt;
-    tdata.lnb = -1;
-    tdata.tfd = -1;
-    tdata.fefd = 0;
-    tdata.dmxfd = 0;
+	time_t cur_time;
+	pthread_t signal_thread;
+	pthread_t reader_thread;
+	pthread_t ipc_thread;
+	QUEUE_T *p_queue = create_queue(MAX_QUEUE);
+	BUFSZ *bufptr;
+	decoder *decoder = NULL;
+	splitter *splitter = NULL;
+	static thread_data tdata;
+	decoder_options dopt = {
+		4, /* round */
+		0, /* strip */
+		0  /* emm */
+	};
+	tdata.dopt = &dopt;
+	tdata.lnb = -1;
+	tdata.tfd = -1;
+	tdata.fefd = 0;
+	tdata.dmxfd = 0;
 
-    int result;
-    int option_index;
-    struct option long_options[] = {
+	int result;
+	int option_index;
+	struct option long_options[] = {
 #ifdef HAVE_LIBARIBB25
-        { "b25",       0, NULL, 'b'},
-        { "B25",       0, NULL, 'b'},
-        { "round",     1, NULL, 'r'},
-        { "strip",     0, NULL, 's'},
-        { "emm",       0, NULL, 'm'},
-        { "EMM",       0, NULL, 'm'},
+		{"b25",     0, NULL, 'b'},
+		{"B25",     0, NULL, 'b'},
+		{"round",   1, NULL, 'r'},
+		{"strip",   0, NULL, 's'},
+		{"emm",     0, NULL, 'm'},
+		{"EMM",     0, NULL, 'm'},
 #endif
-        { "LNB",       1, NULL, 'n'},
-        { "lnb",       1, NULL, 'n'},
-        { "udp",       0, NULL, 'u'},
-        { "addr",      1, NULL, 'a'},
-        { "port",      1, NULL, 'p'},
-        { "http",      1, NULL, 'H'},
-        { "dev",       1, NULL, 'd'},
-        { "help",      0, NULL, 'h'},
-        { "version",   0, NULL, 'v'},
-        { "list",      0, NULL, 'l'},
-        { "sid",       1, NULL, 'i'},
-        {0, 0, NULL, 0} /* terminate */
-    };
+		{"LNB",     1, NULL, 'n'},
+		{"lnb",     1, NULL, 'n'},
+		{"udp",     0, NULL, 'u'},
+		{"addr",    1, NULL, 'a'},
+		{"port",    1, NULL, 'p'},
+		{"http",    1, NULL, 'H'},
+		{"dev",     1, NULL, 'd'},
+		{"help",    0, NULL, 'h'},
+		{"version", 0, NULL, 'v'},
+		{"list",    0, NULL, 'l'},
+		{"sid",     1, NULL, 'i'},
+		{0, 0, NULL, 0} /* terminate */
+	};
 
-    boolean use_b25 = FALSE;
-    boolean use_udp = FALSE;
-    boolean use_http = FALSE;
-    boolean fileless = FALSE;
-    boolean use_stdout = FALSE;
-    boolean use_splitter = FALSE;
-    char *host_to = NULL;
-    int port_to = 1234;
-    int port_http = 12345;
-    sock_data *sockdata = NULL;
-    int dev_num = -1;
-    int val;
-    char *voltage[] = {"11V", "15V", "0V"};
-    char *sid_list = NULL;
+	boolean use_b25 = FALSE;
+	boolean use_udp = FALSE;
+	boolean use_http = FALSE;
+	boolean fileless = FALSE;
+	boolean use_stdout = FALSE;
+	boolean use_splitter = FALSE;
+	char *host_to = NULL;
+	int port_to = 1234;
+	int port_http = 12345;
+	sock_data *sockdata = NULL;
+	int dev_num = -1;
+	int val;
+	char *voltage[] = {"11V", "15V", "0V"};
+	char *sid_list = NULL;
 	int connected_socket = 0, listening_socket = 0;
 	unsigned int len;
 	char *channel = NULL;
 
-	if(set_ch_table() != 0)
+	if (set_ch_table() != 0)
 		return 1;
 
-    while((result = getopt_long(argc, argv, "br:smn:ua:H:p:d:hvli:",
-                                long_options, &option_index)) != -1) {
-        switch(result) {
-        case 'b':
-            use_b25 = TRUE;
-            fprintf(stderr, "using B25...\n");
-            break;
-        case 's':
-            dopt.strip = TRUE;
-            fprintf(stderr, "enable B25 strip\n");
-            break;
-        case 'm':
-            dopt.emm = TRUE;
-            fprintf(stderr, "enable B25 emm processing\n");
-            break;
-        case 'u':
-            use_udp = TRUE;
-            host_to = "localhost";
-            fprintf(stderr, "enable UDP broadcasting\n");
-            break;
-        case 'H':
-            use_http = TRUE;
-            port_http = atoi(optarg);
-            fprintf(stderr, "creating a http daemon\n");
-            break;
-        case 'h':
-            show_usage(argv[0]);
-            fprintf(stderr, "\n");
-            show_options();
-            fprintf(stderr, "\n");
-            show_channels();
-            fprintf(stderr, "\n");
-            exit(0);
-            break;
-        case 'v':
-            fprintf(stderr, "%s %s\n", argv[0], version);
-            fprintf(stderr, "recorder command for DVB tuner.\n");
-            exit(0);
-            break;
-        case 'l':
-            show_channels();
-            exit(0);
-            break;
-        /* following options require argument */
-        case 'n':
-            val = atoi(optarg);
-            switch(val) {
-            case 11:
-                tdata.lnb = 0;	// SEC_VOLTAGE_13 日本は11V(PT1/2/3は12V)
-                break;
-            case 15:
-                tdata.lnb = 1;	// SEC_VOLTAGE_18 日本は15V
-                break;
-            default:
-                tdata.lnb = 2;	// SEC_VOLTAGE_OFF
-                break;
-            }
-            fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
-            break;
-        case 'r':
-            dopt.round = atoi(optarg);
-            fprintf(stderr, "set round %d\n", dopt.round);
-            break;
-        case 'a':
-            use_udp = TRUE;
-            host_to = optarg;
-            fprintf(stderr, "UDP destination address: %s\n", host_to);
-            break;
-        case 'p':
-            port_to = atoi(optarg);
-            fprintf(stderr, "UDP port: %d\n", port_to);
-            break;
-        case 'd':
-            dev_num = atoi(optarg);
-            fprintf(stderr, "using device: /dev/dvb/adapter%d", dev_num);
-            break;
-        case 'i':
-            use_splitter = TRUE;
-            sid_list = optarg;
-            break;
-        }
-    }
-
-if(use_http){	// http-server add-
-	fprintf(stderr, "run as a daemon..\n");
-	if(daemon(1,1)){
-		perror("failed to start");
-		return 1;
+	while ((result = getopt_long(argc, argv, "br:smn:ua:H:p:d:hvli:",
+								 long_options, &option_index)) != -1) {
+		switch (result) {
+			case 'b':
+				use_b25 = TRUE;
+				fprintf(stderr, "using B25...\n");
+				break;
+			case 's':
+				dopt.strip = TRUE;
+				fprintf(stderr, "enable B25 strip\n");
+				break;
+			case 'm':
+				dopt.emm = TRUE;
+				fprintf(stderr, "enable B25 emm processing\n");
+				break;
+			case 'u':
+				use_udp = TRUE;
+				host_to = "localhost";
+				fprintf(stderr, "enable UDP broadcasting\n");
+				break;
+			case 'H':
+				use_http = TRUE;
+				port_http = atoi(optarg);
+				fprintf(stderr, "creating a http daemon\n");
+				break;
+			case 'h':
+				show_usage(argv[0]);
+				fprintf(stderr, "\n");
+				show_options();
+				fprintf(stderr, "\n");
+				show_channels();
+				fprintf(stderr, "\n");
+				exit(0);
+				break;
+			case 'v':
+				fprintf(stderr, "%s %s\n", argv[0], version);
+				fprintf(stderr, "recorder command for DVB tuner.\n");
+				exit(0);
+				break;
+			case 'l':
+				show_channels();
+				exit(0);
+				break;
+			/* following options require argument */
+			case 'n':
+				val = atoi(optarg);
+				switch (val) {
+					case 11:
+						tdata.lnb = 0;  // SEC_VOLTAGE_13 日本は11V(PT1/2/3は12V)
+						break;
+					case 15:
+						tdata.lnb = 1;  // SEC_VOLTAGE_18 日本は15V
+						break;
+					default:
+						tdata.lnb = 2;  // SEC_VOLTAGE_OFF
+						break;
+				}
+				fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
+				break;
+			case 'r':
+				dopt.round = atoi(optarg);
+				fprintf(stderr, "set round %d\n", dopt.round);
+				break;
+			case 'a':
+				use_udp = TRUE;
+				host_to = optarg;
+				fprintf(stderr, "UDP destination address: %s\n", host_to);
+				break;
+			case 'p':
+				port_to = atoi(optarg);
+				fprintf(stderr, "UDP port: %d\n", port_to);
+				break;
+			case 'd':
+				dev_num = atoi(optarg);
+				fprintf(stderr, "using device: /dev/dvb/adapter%d", dev_num);
+				break;
+			case 'i':
+				use_splitter = TRUE;
+				sid_list = optarg;
+				break;
+		}
 	}
-	fprintf(stderr, "pid = %d\n", getpid());
 
-	struct sockaddr_in sin;
-	int ret;
-	int sock_optval = 1;
-		
-	listening_socket = socket(AF_INET, SOCK_STREAM, 0);
-	if ( listening_socket == -1 ){
-		perror("socket");
-		return 1;
-	}
-		
-	if ( setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR,
-			&sock_optval, sizeof(sock_optval)) == -1 ){
-		perror("setsockopt");
-		return 1;
-	}
-		
-	sin.sin_family = AF_INET;
-	sin.sin_port = htons(port_http);
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (use_http) {  // http-server add-
+		fprintf(stderr, "run as a daemon..\n");
+		if (daemon(1, 1)) {
+			perror("failed to start");
+			return 1;
+		}
+		fprintf(stderr, "pid = %d\n", getpid());
 
-		
-	if ( bind(listening_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0 ){
-		perror("bind");
-		return 1;
-	}
-		
-	ret = listen(listening_socket, SOMAXCONN);
-	if ( ret == -1 ){
-		perror("listen");
-		return 1;
-	}
-	fprintf(stderr,"listening at port %d\n", port_http);
-	//set rectime to the infinite
-	if(parse_time("-",&tdata.recsec) != 0){
-		return 1;
-	}
-	if(tdata.recsec == -1)
-		tdata.indefinite = TRUE;
-}else{	// -http-server add
-    if(argc - optind < 3) {
-        if(argc - optind == 2 && use_udp) {
-            fprintf(stderr, "Fileless UDP broadcasting\n");
-            fileless = TRUE;
-            tdata.wfd = -1;
-        }
-        else {
-            if(argc == optind && dev_num != -1 && tdata.lnb != -1){
-				return lnb_control(dev_num, tdata.lnb);
-			}else{
-	            show_usage(argv[0]);
-	            fprintf(stderr, "\n");
-	            fprintf(stderr, "Arguments are necessary!\n");
-	            fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
-	            return 1;
-            }
-        }
-    }
+		struct sockaddr_in sin;
+		int ret;
+		int sock_optval = 1;
 
-    fprintf(stderr, "pid = %d\n", getpid());
-
-    /* tune */
-    if(tune(argv[optind], &tdata, dev_num) != 0)
-        return 1;
-
-    /* set recsec */
-    if(parse_time(argv[optind + 1], &tdata.recsec) != 0) // no other thread --yaz
-        return 1;
-
-    if(tdata.recsec == -1)
-        tdata.indefinite = TRUE;
-
-    /* open output file */
-    char *destfile = argv[optind + 2];
-    if(destfile && !strcmp("-", destfile)) {
-        use_stdout = TRUE;
-        tdata.wfd = 1; /* stdout */
-    }
-    else {
-        if(!fileless) {
-            int status;
-            char *path = strdup(argv[optind + 2]);
-            char *dir = dirname(path);
-            status = mkpath(dir, 0777);
-            if(status == -1)
-                perror("mkpath");
-            free(path);
-
-            tdata.wfd = open(argv[optind + 2], (O_RDWR | O_CREAT | O_TRUNC), 0666);
-            if(tdata.wfd < 0) {
-                fprintf(stderr, "Cannot open output file: %s\n",
-                        argv[optind + 2]);
-                return 1;
-            }
-        }
-    }
-}	// http-server add
-
-    /* initialize decoder */
-    if(use_b25) {
-        decoder = b25_startup(&dopt);
-        if(!decoder) {
-            fprintf(stderr, "Cannot start b25 decoder\n");
-            fprintf(stderr, "Fall back to encrypted recording\n");
-            use_b25 = FALSE;
-        }
-    }
-
-while(1){	// http-server add-
-	if(use_http){
-		struct hostent *peer_host;
-		struct sockaddr_in peer_sin;
-
-		len = sizeof(peer_sin);
-
-		connected_socket = accept(listening_socket, (struct sockaddr *)&peer_sin, &len);
-		if ( connected_socket == -1 ){
-			perror("accept");
+		listening_socket = socket(AF_INET, SOCK_STREAM, 0);
+		if (listening_socket == -1) {
+			perror("socket");
 			return 1;
 		}
 
-		peer_host = gethostbyaddr((char *)&peer_sin.sin_addr.s_addr,
-				  sizeof(peer_sin.sin_addr), AF_INET);
-		char    *h_name;
-		if ( peer_host == NULL ){
-			h_name = "NONAME";
-		}else
-            h_name = peer_host->h_name;
-
-		fprintf(stderr,"connect from: %s [%s] port %d\n", h_name, inet_ntoa(peer_sin.sin_addr), ntohs(peer_sin.sin_port));
-
-		char buf[256];
-		read_line(connected_socket, buf);
-		fprintf(stderr,"request command is %s\n",buf);
-		char s0[256],s1[256],s2[256];
-		sscanf(buf,"%s%s%s",s0,s1,s2);
-		char delim[] = "/";
-		channel = strtok(s1,delim);
-		char *sidflg = strtok(NULL,delim);
-		if(sidflg)
-			sid_list = sidflg;
-		fprintf(stderr,"channel is %s\n",channel);
-
-		if(sid_list == NULL){
-			use_splitter = FALSE;
-			splitter = NULL;
-		}else if(!strcmp(sid_list,"all")){
-			use_splitter = FALSE;
-			splitter = NULL;
-		}else{
-			use_splitter = TRUE;
-		}
-	}	// -http-server add
-
-    /* initialize splitter */
-    if(use_splitter) {
-        splitter = split_startup(sid_list);
-        if(splitter->sid_list == NULL) {
-            fprintf(stderr, "Cannot start TS splitter\n");
-            return 1;
-        }
-    }
-
-	if(use_http){	// http-server add-
-		char header[] =  "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-cache\r\n\r\n";
-		int len = strlen(header);
-		if(write(connected_socket, header, len) < len){
-			close(connected_socket);
-			if(use_splitter)
-				split_shutdown(splitter);
-			continue;
+		if (setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR,
+					   &sock_optval, sizeof(sock_optval)) == -1) {
+			perror("setsockopt");
+			return 1;
 		}
 
-		//set write target to http
-		tdata.wfd = connected_socket;
+		sin.sin_family = AF_INET;
+		sin.sin_port = htons(port_http);
+		sin.sin_addr.s_addr = htonl(INADDR_ANY);
 
-		//tune
-		if(tune(channel, &tdata, -1) != 0){
-			fprintf(stderr, "Tuner cannot start recording\n");
-			continue;
+		if (bind(listening_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
+			perror("bind");
+			return 1;
 		}
-	}else{	// -http-server add
-    /* initialize udp connection */
-    if(use_udp) {
-      sockdata = (sock_data *)calloc(1, sizeof(sock_data));
-      struct in_addr ia;
-      ia.s_addr = inet_addr(host_to);
-      if(ia.s_addr == INADDR_NONE) {
-            struct hostent *hoste = gethostbyname(host_to);
-            if(!hoste) {
-                perror("gethostbyname");
-                return 1;
-            }
-            ia.s_addr = *(in_addr_t*) (hoste->h_addr_list[0]);
-        }
-        if((sockdata->sfd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
-            perror("socket");
-            return 1;
-        }
 
-        sockdata->addr.sin_family = AF_INET;
-        sockdata->addr.sin_port = htons (port_to);
-        sockdata->addr.sin_addr.s_addr = ia.s_addr;
+		ret = listen(listening_socket, SOMAXCONN);
+		if (ret == -1) {
+			perror("listen");
+			return 1;
+		}
+		fprintf(stderr, "listening at port %d\n", port_http);
+		//set rectime to the infinite
+		if (parse_time("-", &tdata.recsec) != 0) {
+			return 1;
+		}
+		if (tdata.recsec == -1)
+			tdata.indefinite = TRUE;
+	} else {  // -http-server add
+		if (argc - optind < 3) {
+			if (argc - optind == 2 && use_udp) {
+				fprintf(stderr, "Fileless UDP broadcasting\n");
+				fileless = TRUE;
+				tdata.wfd = -1;
+			} else {
+				if (argc == optind && dev_num != -1 && tdata.lnb != -1) {
+					return lnb_control(dev_num, tdata.lnb);
+				} else {
+					show_usage(argv[0]);
+					fprintf(stderr, "\n");
+					fprintf(stderr, "Arguments are necessary!\n");
+					fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
+					return 1;
+				}
+			}
+		}
 
-        if(connect(sockdata->sfd, (struct sockaddr *)&sockdata->addr,
-                   sizeof(sockdata->addr)) < 0) {
-            perror("connect");
-            return 1;
-        }
-    }
-	}	// http-server add
+		fprintf(stderr, "pid = %d\n", getpid());
 
-    /* initialize mutex */
-	pthread_mutex_init(&mutex, NULL);
+		/* tune */
+		if (tune(argv[optind], &tdata, dev_num) != 0)
+			return 1;
 
-    /* prepare thread data */
-    tdata.queue = p_queue;
-    tdata.decoder = decoder;
-    tdata.splitter = splitter;
-    tdata.sock_data = sockdata;
-    tdata.tune_persistent = FALSE;
+		/* set recsec */
+		if (parse_time(argv[optind + 1], &tdata.recsec) != 0)  // no other thread --yaz
+			return 1;
 
-    /* spawn signal handler thread */
-    init_signal_handlers(&signal_thread, &tdata);
+		if (tdata.recsec == -1)
+			tdata.indefinite = TRUE;
 
-    /* spawn reader thread */
-    tdata.signal_thread = signal_thread;
-    pthread_create(&reader_thread, NULL, reader_func, &tdata);
+		/* open output file */
+		char *destfile = argv[optind + 2];
+		if (destfile && !strcmp("-", destfile)) {
+			use_stdout = TRUE;
+			tdata.wfd = 1; /* stdout */
+		} else {
+			if (!fileless) {
+				int status;
+				char *path = strdup(argv[optind + 2]);
+				char *dir = dirname(path);
+				status = mkpath(dir, 0777);
+				if (status == -1)
+					perror("mkpath");
+				free(path);
 
-    /* spawn ipc thread */
-    key_t key;
-    key = (key_t)getpid();
+				tdata.wfd = open(argv[optind + 2], (O_RDWR | O_CREAT | O_TRUNC), 0666);
+				if (tdata.wfd < 0) {
+					fprintf(stderr, "Cannot open output file: %s\n",
+							argv[optind + 2]);
+					return 1;
+				}
+			}
+		}
+	}  // http-server add
 
-    if ((tdata.msqid = msgget(key, IPC_CREAT | 0666)) < 0) {
-        perror("msgget");
-    }
-    pthread_create(&ipc_thread, NULL, mq_recv, &tdata);
-    fprintf(stderr, "\nRecording...\n");
-
-    time(&tdata.start_time);
-
-    /* read from tuner */
-    while(1) {
-        if(f_exit)
-            break;
-
-        time(&cur_time);
-        bufptr = malloc(sizeof(BUFSZ));
-        if(!bufptr) {
-            f_exit = TRUE;
-            break;
-        }
-        pthread_mutex_lock(&mutex);
-        bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
-        pthread_mutex_unlock(&mutex);
-        if(bufptr->size <= 0) {
-            if((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
-                f_exit = TRUE;
-                enqueue(p_queue, NULL);
-                break;
-            }
-            else {
-                free(bufptr);
-                continue;
-            }
-        }
-        enqueue(p_queue, bufptr);
-
-        /* stop recording */
-//        time(&cur_time);
-        if((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
-#if 1
-// ここは何とかしたいところ
-//            stream_stop(&tdata);
-            /* read remaining data */
-            do{
-                bufptr = malloc(sizeof(BUFSZ));
-                if(!bufptr) {
-                    f_exit = TRUE;
-                    break;
-                }
-                pthread_mutex_lock(&mutex);
-                bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
-                pthread_mutex_unlock(&mutex);
-                if(bufptr->size <= 0) {
-                    f_exit = TRUE;
-                    enqueue(p_queue, NULL);
-                    break;
-                }
-                enqueue(p_queue, bufptr);
-            }while(cur_time == time(NULL));
-#endif
-            break;
-        }
-    }
-
-    /* delete message queue*/
-    msgctl(tdata.msqid, IPC_RMID, NULL);
-
-    pthread_kill(signal_thread, SIGUSR1);
-
-    /* wait for threads */
-    pthread_join(reader_thread, NULL);
-    pthread_join(signal_thread, NULL);
-    pthread_join(ipc_thread, NULL);
-
-    /* close tuner */
-    result = close_tuner(&tdata);
-
-    /* destroy mutex */
-	pthread_mutex_destroy(&mutex);
-
-    /* release queue */
-    destroy_queue(p_queue);
-	if(use_http){	// http-server add-
-		//reset queue
-		p_queue = create_queue(MAX_QUEUE);
-
-		/* close http socket */
-		close(tdata.wfd);
-
-		fprintf(stderr,"connection closed. still listening at port %d\n",port_http);
-		f_exit = FALSE;
-	}else{	// -http-server add
-    /* close output file */
-	if(!use_stdout){
-		fsync(tdata.wfd);
-        close(tdata.wfd);
+	/* initialize decoder */
+	if (use_b25) {
+		decoder = b25_startup(&dopt);
+		if (!decoder) {
+			fprintf(stderr, "Cannot start b25 decoder\n");
+			fprintf(stderr, "Fall back to encrypted recording\n");
+			use_b25 = FALSE;
+		}
 	}
 
-    /* free socket data */
-    if(use_udp) {
-        close(sockdata->sfd);
-        free(sockdata);
-    }
+	while (1) {  // http-server add-
+		if (use_http) {
+			struct hostent *peer_host;
+			struct sockaddr_in peer_sin;
 
-    /* release decoder */
-    if(!use_http)
-    if(use_b25) {
-        b25_shutdown(decoder);
-    }
-	}	// http-server add
-    if(use_splitter) {
-        split_shutdown(splitter);
-    }
+			len = sizeof(peer_sin);
 
-	if(!use_http)	// http-server add
-    	return result;
-}	// http-server add
+			connected_socket = accept(listening_socket, (struct sockaddr *)&peer_sin, &len);
+			if (connected_socket == -1) {
+				perror("accept");
+				return 1;
+			}
+
+			peer_host = gethostbyaddr((char *)&peer_sin.sin_addr.s_addr,
+									  sizeof(peer_sin.sin_addr), AF_INET);
+			char *h_name;
+			if (peer_host == NULL) {
+				h_name = "NONAME";
+			} else
+				h_name = peer_host->h_name;
+
+			fprintf(stderr, "connect from: %s [%s] port %d\n", h_name,
+					inet_ntoa(peer_sin.sin_addr), ntohs(peer_sin.sin_port));
+
+			char buf[256];
+			read_line(connected_socket, buf);
+			fprintf(stderr, "request command is %s\n", buf);
+			char s0[256], s1[256], s2[256];
+			sscanf(buf, "%s%s%s", s0, s1, s2);
+			char delim[] = "/";
+			channel = strtok(s1, delim);
+			char *sidflg = strtok(NULL, delim);
+			if (sidflg)
+				sid_list = sidflg;
+			fprintf(stderr, "channel is %s\n", channel);
+
+			if (sid_list == NULL) {
+				use_splitter = FALSE;
+				splitter = NULL;
+			} else if (!strcmp(sid_list, "all")) {
+				use_splitter = FALSE;
+				splitter = NULL;
+			} else {
+				use_splitter = TRUE;
+			}
+		}  // -http-server add
+
+		/* initialize splitter */
+		if (use_splitter) {
+			splitter = split_startup(sid_list);
+			if (splitter->sid_list == NULL) {
+				fprintf(stderr, "Cannot start TS splitter\n");
+				return 1;
+			}
+		}
+
+		if (use_http) {  // http-server add-
+			char header[] = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-cache\r\n\r\n";
+			int len = strlen(header);
+			if (write(connected_socket, header, len) < len) {
+				close(connected_socket);
+				if (use_splitter)
+					split_shutdown(splitter);
+				continue;
+			}
+
+			//set write target to http
+			tdata.wfd = connected_socket;
+
+			//tune
+			if (tune(channel, &tdata, -1) != 0) {
+				fprintf(stderr, "Tuner cannot start recording\n");
+				continue;
+			}
+		} else {  // -http-server add
+			/* initialize udp connection */
+			if (use_udp) {
+				sockdata = (sock_data *)calloc(1, sizeof(sock_data));
+				struct in_addr ia;
+				ia.s_addr = inet_addr(host_to);
+				if (ia.s_addr == INADDR_NONE) {
+					struct hostent *hoste = gethostbyname(host_to);
+					if (!hoste) {
+						perror("gethostbyname");
+						return 1;
+					}
+					ia.s_addr = *(in_addr_t *)(hoste->h_addr_list[0]);
+				}
+				if ((sockdata->sfd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
+					perror("socket");
+					return 1;
+				}
+
+				sockdata->addr.sin_family = AF_INET;
+				sockdata->addr.sin_port = htons(port_to);
+				sockdata->addr.sin_addr.s_addr = ia.s_addr;
+
+				if (connect(sockdata->sfd, (struct sockaddr *)&sockdata->addr,
+							sizeof(sockdata->addr)) < 0) {
+					perror("connect");
+					return 1;
+				}
+			}
+		}  // http-server add
+
+		/* initialize mutex */
+		pthread_mutex_init(&mutex, NULL);
+
+		/* prepare thread data */
+		tdata.queue = p_queue;
+		tdata.decoder = decoder;
+		tdata.splitter = splitter;
+		tdata.sock_data = sockdata;
+		tdata.tune_persistent = FALSE;
+
+		/* spawn signal handler thread */
+		init_signal_handlers(&signal_thread, &tdata);
+
+		/* spawn reader thread */
+		tdata.signal_thread = signal_thread;
+		pthread_create(&reader_thread, NULL, reader_func, &tdata);
+
+		/* spawn ipc thread */
+		key_t key;
+		key = (key_t)getpid();
+
+		if ((tdata.msqid = msgget(key, IPC_CREAT | 0666)) < 0) {
+			perror("msgget");
+		}
+		pthread_create(&ipc_thread, NULL, mq_recv, &tdata);
+		fprintf(stderr, "\nRecording...\n");
+
+		time(&tdata.start_time);
+
+		/* read from tuner */
+		while (1) {
+			if (f_exit)
+				break;
+
+			time(&cur_time);
+			bufptr = malloc(sizeof(BUFSZ));
+			if (!bufptr) {
+				f_exit = TRUE;
+				break;
+			}
+			pthread_mutex_lock(&mutex);
+			bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
+			pthread_mutex_unlock(&mutex);
+			if (bufptr->size <= 0) {
+				if ((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
+					f_exit = TRUE;
+					enqueue(p_queue, NULL);
+					break;
+				} else {
+					free(bufptr);
+					continue;
+				}
+			}
+			enqueue(p_queue, bufptr);
+
+			/* stop recording */
+			if ((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
+				// ここは何とかしたいところ
+				/* read remaining data */
+				do {
+					bufptr = malloc(sizeof(BUFSZ));
+					if (!bufptr) {
+						f_exit = TRUE;
+						break;
+					}
+					pthread_mutex_lock(&mutex);
+					bufptr->size = read(tdata.tfd, bufptr->buffer, MAX_READ_SIZE);
+					pthread_mutex_unlock(&mutex);
+					if (bufptr->size <= 0) {
+						f_exit = TRUE;
+						enqueue(p_queue, NULL);
+						break;
+					}
+					enqueue(p_queue, bufptr);
+				} while (cur_time == time(NULL));
+				break;
+			}
+		}
+
+		/* delete message queue*/
+		msgctl(tdata.msqid, IPC_RMID, NULL);
+
+		pthread_kill(signal_thread, SIGUSR1);
+
+		/* wait for threads */
+		pthread_join(reader_thread, NULL);
+		pthread_join(signal_thread, NULL);
+		pthread_join(ipc_thread, NULL);
+
+		/* close tuner */
+		result = close_tuner(&tdata);
+
+		/* destroy mutex */
+		pthread_mutex_destroy(&mutex);
+
+		/* release queue */
+		destroy_queue(p_queue);
+		if (use_http) {  // http-server add-
+			//reset queue
+			p_queue = create_queue(MAX_QUEUE);
+
+			/* close http socket */
+			close(tdata.wfd);
+
+			fprintf(stderr, "connection closed. still listening at port %d\n", port_http);
+			f_exit = FALSE;
+		} else {  // -http-server add
+			/* close output file */
+			if (!use_stdout) {
+				fsync(tdata.wfd);
+				close(tdata.wfd);
+			}
+
+			/* free socket data */
+			if (use_udp) {
+				close(sockdata->sfd);
+				free(sockdata);
+			}
+
+			/* release decoder */
+			if (!use_http)
+				if (use_b25) {
+					b25_shutdown(decoder);
+				}
+		}  // http-server add
+		if (use_splitter) {
+			split_shutdown(splitter);
+		}
+
+		if (!use_http)  // http-server add
+			return result;
+	}  // http-server add
 }

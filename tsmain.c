@@ -1,7 +1,7 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -12,16 +12,16 @@
 #define MAX_READ_SIZE (188 * 100)
 /* maximum write length at once */
 #define SIZE_CHANK 1316
-#define TRUE                1
-#define FALSE               0
+#define TRUE 1
+#define FALSE 0
 /**************************************************************************/
 /**
- * °ú¿ôÍÑ¹½Â¤ÂÎ
+ * å¼•æ•°ç”¨æ§‹é€ ä½“
  */
 typedef struct {
-	char* src;				// ÆþÎÏ¥Õ¥¡¥¤¥ë
-	char* dst;				// ½ÐÎÏ¥Õ¥¡¥¤¥ë
-	char* sid;				// ½ÐÎÏÂÐ¾Ý¥Á¥ã¥ó¥Í¥ëÈÖ¹æ
+	char* src;  // å…¥åŠ›ãƒ•ã‚¡ã‚¤ãƒ«
+	char* dst;  // å‡ºåŠ›ãƒ•ã‚¡ã‚¤ãƒ«
+	char* sid;  // å‡ºåŠ›å¯¾è±¡ãƒãƒ£ãƒ³ãƒãƒ«ç•ªå·
 } PARAM;
 typedef int boolean;
 
@@ -30,94 +30,90 @@ int AnalyzeParam(int argc, char** argv, PARAM* param);
 
 int execute(PARAM* param);
 
-
 /**************************************************************************/
 
 /**
  *
  */
 int main(
-	int argc,							// [in]		°ú¿ô¤Î¸Ä¿ô
-	char** argv)						// [in]		°ú¿ô
+	int argc,     // [in] å¼•æ•°ã®å€‹æ•°
+	char** argv)  // [in] å¼•æ•°
 {
 	PARAM param;
 
-	int result;							// ½èÍý·ë²Ì
+	int result;  // å‡¦ç†çµæžœ
 
-	// ¥Ñ¥é¥á¡¼¥¿²òÀÏ
+	// ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿è§£æž
 	result = AnalyzeParam(argc, argv, &param);
-	if (TSS_SUCCESS != result)
-	{
+	if (TSS_SUCCESS != result) {
 		return result;
 	}
 
-	// ½èÍý¼Â¹Ô
+	// å‡¦ç†å®Ÿè¡Œ
 	result = execute(&param);
 
 	return result;
 }
 
 /**
- * »ÈÍÑÊýË¡¥á¥Ã¥»¡¼¥¸½ÐÎÏ
+ * ä½¿ç”¨æ–¹æ³•ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å‡ºåŠ›
  */
 void show_usage()
 {
 	fprintf(stderr, "tssplitter_lite - tssplitter_lite program Ver. 0.0.0.1\n");
 	fprintf(stderr, "usage: tssplitter_lite srcfile destfile sidlist\n");
 	fprintf(stderr, "\n");
-    fprintf(stderr, "Remarks:\n");
-    fprintf(stderr, "if srcfile is '-', stdin is used for input.\n");
-    fprintf(stderr, "if destfile is '-', stdout is used for output.\n");
+	fprintf(stderr, "Remarks:\n");
+	fprintf(stderr, "if srcfile is '-', stdin is used for input.\n");
+	fprintf(stderr, "if destfile is '-', stdout is used for output.\n");
 	fprintf(stderr, "\n");
 }
 
 /**
- * ¥Ñ¥é¥á¡¼¥¿²òÀÏ
+ * ãƒ‘ãƒ©ãƒ¡ãƒ¼ã‚¿è§£æž
  */
 int AnalyzeParam(
-	int argc,							// [in]		°ú¿ô¤Î¸Ä¿ô
-	char** argv,						// [in]		°ú¿ô
-	PARAM* param)						// [out]	°ú¿ô¾ðÊó¥Ç¡¼¥¿
+	int argc,      // [in]  å¼•æ•°ã®å€‹æ•°
+	char** argv,   // [in]  å¼•æ•°
+	PARAM* param)  // [out] å¼•æ•°æƒ…å ±ãƒ‡ãƒ¼ã‚¿
 {
-	// °ú¿ô¥Á¥§¥Ã¥¯
-	if ((3 != argc) && (4 != argc) && (5 != argc))
-	{
+	// å¼•æ•°ãƒã‚§ãƒƒã‚¯
+	if ((3 != argc) && (4 != argc) && (5 != argc)) {
 		show_usage();
 		return TSS_ERROR;
 	}
 
-	param->src		= argv[1];
-	param->dst		= argv[2];
+	param->src = argv[1];
+	param->dst = argv[2];
 	if (argc > 3) {
-	  param->sid = argv[3];
-	}
-	else {
-	  param->sid = NULL;
+		param->sid = argv[3];
+	} else {
+		param->sid = NULL;
 	}
 
 	return TSS_SUCCESS;
 }
 
 /**
- * ¼Â½èÍý
+ * å®Ÿå‡¦ç†
  */
 int execute(
-	PARAM* param)						// [in]		°ú¿ô¾ðÊó¥Ç¡¼¥¿
+	PARAM* param)  // [in] å¼•æ•°æƒ…å ±ãƒ‡ãƒ¼ã‚¿
 {
-	int sfd;							// ¥Õ¥¡¥¤¥ëµ­½Ò»Ò¡ÊÆÉ¤ß¹þ¤ßÍÑ¡Ë
-	int wfd;							// ¥Õ¥¡¥¤¥ëµ­½Ò»Ò¡Ê½ñ¤­¹þ¤ßÍÑ¡Ë
-	splitter *splitter = NULL;
+	int sfd;  // ãƒ•ã‚¡ã‚¤ãƒ«è¨˜è¿°å­ï¼ˆèª­ã¿è¾¼ã¿ç”¨ï¼‰
+	int wfd;  // ãƒ•ã‚¡ã‚¤ãƒ«è¨˜è¿°å­ï¼ˆæ›¸ãè¾¼ã¿ç”¨ï¼‰
+	splitter* splitter = NULL;
 	static splitbuf_t splitbuf;
 	ARIB_STD_B25_BUFFER buf;
 	int split_select_finish = TSS_ERROR;
 	int code = 0;
 	int wc = 0;
-	int result = TSS_SUCCESS;							// ½èÍý·ë²Ì
+	int result = TSS_SUCCESS;  // å‡¦ç†çµæžœ
 	static uint8_t buffer[MAX_READ_SIZE];
 	boolean use_stdout = TRUE;
 	boolean use_stdin = TRUE;
 
-	// ½é´ü²½
+	// åˆæœŸåŒ–
 	splitter = split_startup(param->sid);
 	if (splitter->sid_list == NULL) {
 		fprintf(stderr, "Cannot start TS splitter\n");
@@ -126,65 +122,62 @@ int execute(
 
 	buf.data = buffer;
 	splitbuf.buffer_size = MAX_READ_SIZE;
-	splitbuf.buffer = (u_char *)malloc(MAX_READ_SIZE);
-	if(splitbuf.buffer == NULL) {
+	splitbuf.buffer = (u_char*)malloc(MAX_READ_SIZE);
+	if (splitbuf.buffer == NULL) {
 		fprintf(stderr, "split buffer allocation failed\n");
 		return 1;
 	}
 
-	// ÆÉ¤ß¹þ¤ß¥Õ¥¡¥¤¥ë¥ª¡¼¥×¥ó
-	if(!strcmp("-", param->src)){
+	// èª­ã¿è¾¼ã¿ãƒ•ã‚¡ã‚¤ãƒ«ã‚ªãƒ¼ãƒ—ãƒ³
+	if (!strcmp("-", param->src)) {
 		sfd = 0; /* stdin */
-	}else{
+	} else {
 		sfd = open(param->src, O_RDONLY);
-		if (sfd < 0){
+		if (sfd < 0) {
 			fprintf(stderr, "Cannot open input file: %s\n", param->src);
 			result = 1;
 			goto fin;
-		}else
+		} else
 			use_stdin = FALSE;
 	}
 
-	// ½ñ¤­¹þ¤ß¥Õ¥¡¥¤¥ë¥ª¡¼¥×¥ó
-	if(!strcmp("-", param->dst)){
+	// æ›¸ãè¾¼ã¿ãƒ•ã‚¡ã‚¤ãƒ«ã‚ªãƒ¼ãƒ—ãƒ³
+	if (!strcmp("-", param->dst)) {
 		wfd = 1; /* stdout */
-	}else{
+	} else {
 		wfd = open(param->dst, (O_RDWR | O_CREAT | O_TRUNC), 0666);
-		if (wfd < 0){
+		if (wfd < 0) {
 			fprintf(stderr, "Cannot open output file: %s\n", param->dst);
 			result = 1;
 			goto fin;
-		}else
+		} else
 			use_stdout = FALSE;
 	}
 
-	// ¥Õ¥¡¥¤¥ëÆþÎÏ
+	// ãƒ•ã‚¡ã‚¤ãƒ«å…¥åŠ›
 	while ((buf.size = read(sfd, buf.data, MAX_READ_SIZE)) > 0) {
 		splitbuf.buffer_filled = 0;
 
-		while(buf.size) {
-			/* Ê¬Î¥ÂÐ¾ÝPID¤ÎÃê½Ð */
-			if(split_select_finish != TSS_SUCCESS) {
+		while (buf.size) {
+			/* åˆ†é›¢å¯¾è±¡PIDã®æŠ½å‡º */
+			if (split_select_finish != TSS_SUCCESS) {
 				split_select_finish = split_select(splitter, &buf);
-				if(split_select_finish == TSS_NULL) {
-					/* malloc¥¨¥é¡¼È¯À¸ */
+				if (split_select_finish == TSS_NULL) {
+					/* mallocã‚¨ãƒ©ãƒ¼ç™ºç”Ÿ */
 					fprintf(stderr, "split_select malloc failed\n");
 					result = 1;
 					goto fin;
-				}
-				else if (split_select_finish != TSS_SUCCESS) {
-//					buf.data = buffer;
+				} else if (split_select_finish != TSS_SUCCESS) {
 					break;
 				}
 			}
 
-			/* Ê¬Î¥ÂÐ¾Ý°Ê³°¤ò¤Õ¤ë¤¤Íî¤È¤¹ */
+			/* åˆ†é›¢å¯¾è±¡ä»¥å¤–ã‚’ãµã‚‹ã„è½ã¨ã™ */
 			code = split_ts(splitter, &buf, &splitbuf);
-			if(code == TSS_NULL) {
+			if (code == TSS_NULL) {
 				fprintf(stderr, "PMT reading..\n");
-			}
-			else if(code != TSS_SUCCESS) {
-				//¥×¥í¥°¥é¥à¾å¤³¤³¤Ë¤ÏÆþ¤é¤Ê¤¤ fail safe
+			} else if (code != TSS_SUCCESS) {
+				//ãƒ—ãƒ­ã‚°ãƒ©ãƒ ä¸Šã“ã“ã«ã¯å…¥ã‚‰ãªã„ fail safe
 				fprintf(stderr, "split_ts failed\n");
 				result = TSS_ERROR;
 				goto fin;
@@ -196,11 +189,11 @@ int execute(
 		int size_remain = splitbuf.buffer_filled;
 		int offset = 0;
 
-		while(size_remain > 0) {
+		while (size_remain > 0) {
 			int ws = size_remain < SIZE_CHANK ? size_remain : SIZE_CHANK;
 
 			wc = write(wfd, splitbuf.buffer + offset, ws);
-			if(wc < 0) {
+			if (wc < 0) {
 				perror("write");
 				result = 1;
 				goto fin;
@@ -208,22 +201,19 @@ int execute(
 			size_remain -= wc;
 			offset += wc;
 		}
-
-//		buf.data = buffer;
 	}
 fin:
-	// ³«Êü½èÍý
+	// é–‹æ”¾å‡¦ç†
 	free(splitbuf.buffer);
 	split_shutdown(splitter);
 	/* close output file */
-	if(!use_stdout){
+	if (!use_stdout) {
 		fsync(wfd);
 		close(wfd);
 	}
-	if(!use_stdin){
+	if (!use_stdin) {
 		close(sfd);
 	}
 
 	return result;
 }
-
