@@ -155,7 +155,7 @@ int main(int argc, char **argv)
 				break;
 			/* following options require argument */
 			case 'n':
-				val = atoi(optarg);
+				val = (int)strtol(optarg, NULL, 10);
 				switch (val) {
 					case 11:
 						tdata.lnb = 0;  // SEC_VOLTAGE_13 “ú–{‚Í11V(PT1/2/3‚Í12V)
@@ -170,7 +170,7 @@ int main(int argc, char **argv)
 				fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
 				break;
 			case 'd':
-				dev_num = atoi(optarg);
+				dev_num = (int)strtol(optarg, NULL, 10);
 				break;
 		}
 	}

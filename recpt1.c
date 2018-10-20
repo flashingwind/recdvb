@@ -724,7 +724,7 @@ int main(int argc, char **argv)
 				break;
 			case 'H':
 				use_http = TRUE;
-				port_http = atoi(optarg);
+				port_http = (int)strtol(optarg, NULL, 10);
 				fprintf(stderr, "creating a http daemon\n");
 				break;
 			case 'h':
@@ -747,7 +747,7 @@ int main(int argc, char **argv)
 				break;
 			/* following options require argument */
 			case 'n':
-				val = atoi(optarg);
+				val = (int)strtol(optarg, NULL, 10);
 				switch (val) {
 					case 11:
 						tdata.lnb = 0;  // SEC_VOLTAGE_13 日本は11V(PT1/2/3は12V)
@@ -762,7 +762,7 @@ int main(int argc, char **argv)
 				fprintf(stderr, "LNB = %s\n", voltage[tdata.lnb]);
 				break;
 			case 'r':
-				dopt.round = atoi(optarg);
+				dopt.round = (int)strtol(optarg, NULL, 10);
 				fprintf(stderr, "set round %d\n", dopt.round);
 				break;
 			case 'a':
@@ -771,11 +771,11 @@ int main(int argc, char **argv)
 				fprintf(stderr, "UDP destination address: %s\n", host_to);
 				break;
 			case 'p':
-				port_to = atoi(optarg);
+				port_to = (int)strtol(optarg, NULL, 10);
 				fprintf(stderr, "UDP port: %d\n", port_to);
 				break;
 			case 'd':
-				dev_num = atoi(optarg);
+				dev_num = (int)strtol(optarg, NULL, 10);
 				fprintf(stderr, "using device: /dev/dvb/adapter%d", dev_num);
 				break;
 			case 'i':

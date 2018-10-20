@@ -452,7 +452,7 @@ static int AnalyzePat(splitter *sp, unsigned char *buf)
 			p = sid_list;
 
 			while (*p) {
-				if (service_id == atoi(*p)) {
+				if (service_id == (int)strtol(*p, NULL, 10)) {
 					/* 録画対象の pmt_pids は 1 とする */
 					/* 録画対象の pmt の pids は 1 とする */
 					pid = GetPid(&buf[i + 2]);
