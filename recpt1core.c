@@ -256,7 +256,7 @@ int dvb_lock_check(thread_data *tdata)
 	int i;
 
 	ts.tv_nsec = 250 * 1000 * 1000;  // 250ms
-	for (i = 0; i < 12; i++)		 // 250ms * 12で最大3秒待つ 3秒待ってもFE_HAS_LOCK後はstatus=0x13で変化無し
+	for (i = 0; i < 12; i++)         // 250ms * 12で最大3秒待つ 3秒待ってもFE_HAS_LOCK後はstatus=0x13で変化無し
 	{
 		fprintf(stderr, ".");
 		if (ioctl(tdata->fefd, FE_READ_STATUS, &status) < 0) {
@@ -362,20 +362,20 @@ float getsignal_isdb_s(int signal)
 {
 	/* apply linear interpolation */
 	static const float afLevelTable[] = {
-		24.07f,  // 00    00    0        24.07dB
-		24.07f,  // 10    00    4096     24.07dB
-		18.61f,  // 20    00    8192     18.61dB
-		15.21f,  // 30    00    12288    15.21dB
-		12.50f,  // 40    00    16384    12.50dB
-		10.19f,  // 50    00    20480    10.19dB
-		8.140f,  // 60    00    24576    8.140dB
-		6.270f,  // 70    00    28672    6.270dB
-		4.550f,  // 80    00    32768    4.550dB
-		3.730f,  // 88    00    34816    3.730dB
-		3.630f,  // 88    FF    35071    3.630dB
-		2.940f,  // 90    00    36864    2.940dB
-		1.420f,  // A0    00    40960    1.420dB
-		0.000f   // B0    00    45056    -0.01dB
+		24.07f,  // 00  00  0      24.07dB
+		24.07f,  // 10  00  4096   24.07dB
+		18.61f,  // 20  00  8192   18.61dB
+		15.21f,  // 30  00  12288  15.21dB
+		12.50f,  // 40  00  16384  12.50dB
+		10.19f,  // 50  00  20480  10.19dB
+		8.140f,  // 60  00  24576  8.140dB
+		6.270f,  // 70  00  28672  6.270dB
+		4.550f,  // 80  00  32768  4.550dB
+		3.730f,  // 88  00  34816  3.730dB
+		3.630f,  // 88  FF  35071  3.630dB
+		2.940f,  // 90  00  36864  2.940dB
+		1.420f,  // A0  00  40960  1.420dB
+		0.000f   // B0  00  45056  -0.01dB
 	};
 
 	unsigned char sigbuf[4];
@@ -394,10 +394,9 @@ float getsignal_isdb_s(int signal)
 		/* linear interpolation */
 		const float fMixRate =
 			(float)(((unsigned short)(sigbuf[0] & 0x0FU) << 8) |
-					(unsigned short)sigbuf[0]) /
-			4096.0f;
+			        (unsigned short)sigbuf[0]) / 4096.0f;
 		return afLevelTable[sigbuf[0] >> 4] * (1.0f - fMixRate) +
-			   afLevelTable[(sigbuf[0] >> 4) + 0x01U] * fMixRate;
+		       afLevelTable[(sigbuf[0] >> 4) + 0x01U] * fMixRate;
 	}
 }
 
@@ -423,10 +422,13 @@ void calc_cn(int fd, int type, boolean use_bell)
 				props.num = 1;
 
 				if (ioctl(fd, FE_GET_PROPERTY, &props) < 0) {
-					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_GET_PROPERTY) errno=%d(%s)\n", errno, strerror(errno));
+					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_GET_PROPERTY) errno=%d(%s)\n",
+					        errno, strerror(errno));
 #endif
-					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SIGNAL_STRENGTH) errno=%d(%s)\n", ss_errno, strerror(ss_errno));
-					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SNR) errno=%d(%s)\n", rs_errno, strerror(rs_errno));
+					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SIGNAL_STRENGTH) errno=%d(%s)\n",
+					        ss_errno, strerror(ss_errno));
+					fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SNR) errno=%d(%s)\n",
+					        rs_errno, strerror(rs_errno));
 					return;
 #ifdef DTV_STAT_SIGNAL_STRENGTH
 				} else {
@@ -435,20 +437,21 @@ void calc_cn(int fd, int type, boolean use_bell)
 				}
 #endif
 			} else if (tuner_type & EARTH_PT1)
-				CNR = (double)rc / 256;  // 目算なので適当 "* 4 / 1000" かも
+				CNR = (double)rc / 256;  // 目算なので適当 "* 4 / 1000"かも
 			else {
 				fprintf(stderr, "SNR: %d\n", rc);
 				return;
 			}
 		} else {
-			fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SIGNAL_STRENGTH) errno=%d(%s)\n", errno, strerror(errno));  // Inappropriate ioctl for device
+			fprintf(stderr, "ERROR: calc_cn() ioctl(FE_READ_SIGNAL_STRENGTH) errno=%d(%s)\n",
+			        errno, strerror(errno));  // Inappropriate ioctl for device
 			return;
 		}
 	} else {
 		if (type == CHTYPE_GROUND) {
 			P = log10(5505024 / (double)rc) * 10;
 			CNR = (0.000024 * P * P * P * P) - (0.0016 * P * P * P) +
-				  (0.0398 * P * P) + (0.5491 * P) + 3.0965;
+			      (0.0398 * P * P) + (0.5491 * P) + 3.0965;
 		} else {
 			CNR = getsignal_isdb_s(rc);
 		}

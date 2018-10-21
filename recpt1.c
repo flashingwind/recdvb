@@ -171,7 +171,7 @@ void enqueue(QUEUE_T *p_queue, BUFSZ *data)
 		spec.tv_nsec = now.tv_usec * 1000;
 
 		pthread_cond_timedwait(&p_queue->cond_avail,
-							   &p_queue->mutex, &spec);
+		                       &p_queue->mutex, &spec);
 		retry_count++;
 		if (retry_count > 60) {
 			f_exit = TRUE;
@@ -215,7 +215,7 @@ BUFSZ *dequeue(QUEUE_T *p_queue)
 		spec.tv_nsec = now.tv_usec * 1000;
 
 		pthread_cond_timedwait(&p_queue->cond_used,
-							   &p_queue->mutex, &spec);
+		                       &p_queue->mutex, &spec);
 		retry_count++;
 		if (retry_count > 60) {
 			f_exit = TRUE;
@@ -314,8 +314,8 @@ void *reader_func(void *p)
 						goto fin;
 					} else if (split_select_finish != TSS_SUCCESS) {
 						/* 分離対象PIDが完全に抽出できるまで出力しない
-                         * 1秒程度余裕を見るといいかも
-                         */
+						 * 1秒程度余裕を見るといいかも
+						 */
 						time_t cur_time;
 						time(&cur_time);
 						if (cur_time - tdata->start_time > 4) {
@@ -352,7 +352,7 @@ void *reader_func(void *p)
 				if (code < 0) {
 					fprintf(stderr, "b25_decode failed (code=%d).", code);
 					if (lp++ < 5) {
-						//decoder restart
+						/* restart b25 decoder */
 						fprintf(stderr, "\ndecoder restart! \n");
 						b25_shutdown(dec);
 						b25_startup(tdata->dopt);
@@ -381,7 +381,7 @@ void *reader_func(void *p)
 					perror("write");
 					file_err = 1;
 					pthread_kill(signal_thread,
-								 errno == EPIPE ? SIGPIPE : SIGUSR2);
+					             errno == EPIPE ? SIGPIPE : SIGUSR2);
 					break;
 				}
 				size_remain -= wc;
@@ -425,7 +425,7 @@ void *reader_func(void *p)
 					perror("write");
 					file_err = 1;
 					pthread_kill(signal_thread,
-								 errno == EPIPE ? SIGPIPE : SIGUSR2);
+					             errno == EPIPE ? SIGPIPE : SIGUSR2);
 				}
 			}
 
@@ -809,7 +809,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (use_http) {  // http-server add-
+	if (use_http) {  // http-server
 		fprintf(stderr, "run as a daemon..\n");
 		if (daemon(1, 1)) {
 			perror("failed to start");
@@ -828,7 +828,7 @@ int main(int argc, char **argv)
 		}
 
 		if (setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR,
-					   &sock_optval, sizeof(sock_optval)) == -1) {
+		               &sock_optval, sizeof(sock_optval)) == -1) {
 			perror("setsockopt");
 			close(listening_socket);
 			return 1;
@@ -851,14 +851,14 @@ int main(int argc, char **argv)
 			return 1;
 		}
 		fprintf(stderr, "listening at port %d\n", port_http);
-		//set rectime to the infinite
+		/* set rectime to the infinite */
 		if (parse_time("-", &tdata.recsec) != 0) {
 			close(listening_socket);
 			return 1;
 		}
 		if (tdata.recsec == -1)
 			tdata.indefinite = TRUE;
-	} else {  // -http-server add
+	} else {  // http-server
 		if (argc - optind < 3) {
 			if (argc - optind == 2 && use_udp) {
 				fprintf(stderr, "Fileless UDP broadcasting\n");
@@ -892,7 +892,7 @@ int main(int argc, char **argv)
 		/* open output file */
 		char *destfile = argv[optind + 2];
 		if (destfile && !strcmp("-", destfile)) {
-			tdata.wfd = 1; /* stdout */
+			tdata.wfd = 1; // stdout
 		} else {
 			if (!fileless) {
 				int status;
@@ -912,7 +912,7 @@ int main(int argc, char **argv)
 				}
 			}
 		}
-	}  // http-server add
+	}  // http-server
 
 	/* initialize decoder */
 	if (use_b25) {
@@ -924,7 +924,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	while (1) {  // http-server add-
+	while (1) {  // http-server
 		result = 1;
 		if (use_http) {
 			struct hostent *peer_host;
@@ -939,7 +939,7 @@ int main(int argc, char **argv)
 			}
 
 			peer_host = gethostbyaddr((char *)&peer_sin.sin_addr.s_addr,
-									  sizeof(peer_sin.sin_addr), AF_INET);
+			                          sizeof(peer_sin.sin_addr), AF_INET);
 			char *h_name;
 			if (peer_host == NULL) {
 				h_name = "NONAME";
@@ -974,7 +974,7 @@ int main(int argc, char **argv)
 			} else {
 				use_splitter = TRUE;
 			}
-		}  // -http-server add
+		}  // http-server
 
 		/* initialize splitter */
 		if (use_splitter) {
@@ -985,14 +985,14 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (use_http) {  // http-server add-
+		if (use_http) {  // http-server
 			char header[] = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-cache\r\n\r\n";
 			int len = strlen(header);
 
-			//set write target to http
+			/* set write target to http */
 			tdata.wfd = connected_socket;
 
-			//tune
+			/* tune */
 			result = tune(channel, &tdata, -1);
 			if (!result)
 				result = write(tdata.wfd, header, len) < len;
@@ -1005,7 +1005,7 @@ int main(int argc, char **argv)
 				}
 				continue;
 			}
-		} else {  // -http-server add
+		} else {  // http-server
 			/* initialize udp connection */
 			if (use_udp) {
 				sockdata = (sock_data *)malloc(sizeof(sock_data));
@@ -1035,7 +1035,7 @@ int main(int argc, char **argv)
 					break;
 				}
 			}
-		}  // http-server add
+		}  // http-server
 
 		/* initialize mutex */
 		pthread_mutex_init(&mutex, NULL);
@@ -1136,7 +1136,7 @@ int main(int argc, char **argv)
 		destroy_queue(tdata.queue);
 		tdata.queue = NULL;
 
-		if (use_http) {  // http-server add-
+		if (use_http) {  // http-server
 			/* close http socket */
 			close(tdata.wfd);
 			tdata.wfd = -1;
@@ -1148,11 +1148,11 @@ int main(int argc, char **argv)
 
 			fprintf(stderr, "connection closed. still listening at port %d\n", port_http);
 			f_exit = FALSE;
-		} else {  // -http-server add
+		} else {  // http-server
 			result = 0;
 			break;
 		}
-	}  // http-server add
+	}  // http-server
 
 	result |= release_resources(&resource_set);
 	return result;
