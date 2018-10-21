@@ -300,8 +300,7 @@ int close_tuner(thread_data *tdata)
 		}
 	}
 
-	if (tdata->table == &channel_set)
-		tdata->table = NULL;
+	tdata->table = NULL;
 	if (tdata->tfd != -1) {
 		close(tdata->tfd);
 		tdata->tfd = -1;

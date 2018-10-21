@@ -34,6 +34,19 @@
 
 #include "tssplitter_lite.h"
 
+typedef struct _RESOURCE_SET {
+	pthread_t *signal_thread;
+	pthread_t *reader_thread;
+	pthread_t *ipc_thread;
+	QUEUE_T **p_queue;
+	decoder **decoder;
+	splitter **splitter;
+	thread_data *tdata;
+	sock_data **sockdata;
+	int *connected_socket;
+	int *listening_socket;
+} RESOURCE_SET;
+
 /* maximum write length at once */
 #define SIZE_CHANK 1316
 
@@ -78,12 +91,14 @@ void *mq_recv(void *t)
 
 	while (1) {
 		if (msgrcv(tdata->msqid, &rbuf, MSGSZ, 1, 0) < 0) {
-			return NULL;
+			break;
 		}
 
 		sscanf(rbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, &recsec, &time_to_add, service_id);
 
-		stock = *(tdata->table);
+		if (!tdata->table)
+			break;
+		stock = *tdata->table;
 		table = searchrecoff(channel);
 		if (!table) {
 			if (channel[0] != '0' || channel[1] != '\0')
@@ -107,7 +122,7 @@ void *mq_recv(void *t)
 				pthread_mutex_unlock(&mutex);
 
 				if (r != 0)
-					return NULL;
+					break;
 			} else {
 				/* SET_CHANNEL only */
 				if (set_frequency(tdata, FALSE)) {
@@ -136,18 +151,21 @@ void *mq_recv(void *t)
 		}
 
 		if (f_exit)
-			return NULL;
+			break;
 	}
+	return NULL;
 }
 
 QUEUE_T *create_queue(size_t size)
 {
 	QUEUE_T *p_queue;
-	int memsize = sizeof(QUEUE_T) + size * sizeof(BUFSZ *);
+	size_t memsize = sizeof(QUEUE_T) + size * sizeof(BUFSZ *);
 
-	p_queue = (QUEUE_T *)calloc(memsize, sizeof(char));
+	p_queue = (QUEUE_T *)malloc(memsize);
 
 	if (p_queue != NULL) {
+		p_queue->in = 0;
+		p_queue->out = 0;
 		p_queue->size = size;
 		p_queue->num_avail = size;
 		p_queue->num_used = 0;
@@ -309,7 +327,9 @@ void *reader_func(void *p)
 
 			/* allocate split buffer */
 			if (splitbuf.buffer_size < buf.size && buf.size > 0) {
-				splitbuf.buffer = (u_char *)realloc(splitbuf.buffer, buf.size);
+				if (splitbuf.buffer)
+					free(splitbuf.buffer);
+				splitbuf.buffer = (u_char *)malloc(buf.size);
 				if (splitbuf.buffer == NULL) {
 					fprintf(stderr, "split buffer allocation failed\n");
 					use_splitter = FALSE;
@@ -425,12 +445,6 @@ void *reader_func(void *p)
 
 		/* normal exit */
 		if ((f_exit && !p_queue->num_used) || file_err) {
-			if (use_splitter) {
-				free(splitbuf.buffer);
-				splitbuf.buffer = NULL;
-				splitbuf.buffer_size = 0;
-			}
-
 			if (use_b25) {
 				code = b25_finish(dec, &dbuf);
 				if (code < 0)
@@ -459,6 +473,12 @@ void *reader_func(void *p)
 
 			break;
 		}
+	}
+
+	if (splitbuf.buffer) {
+		free(splitbuf.buffer);
+		splitbuf.buffer = NULL;
+		splitbuf.buffer_size = 0;
 	}
 
 	time_t cur_time;
@@ -634,13 +654,42 @@ int set_ch_table(void)
 	return 0;
 }
 
+int release_resources(RESOURCE_SET *res)
+{
+	int ret = 0;
+
+	if (*res->sockdata) {
+		if ((*res->sockdata)->sfd > -1)
+			close((*res->sockdata)->sfd);
+		free(*res->sockdata);
+	}
+
+	if (*res->splitter)
+		split_shutdown(*res->splitter);
+
+	if (res->tdata->wfd > 2) {
+		fsync(res->tdata->wfd);
+		close(res->tdata->wfd);
+	}
+
+	if (*res->decoder)
+		b25_shutdown(*res->decoder);
+
+	if (res->tdata)
+		ret = close_tuner(res->tdata);
+
+	if (*res->listening_socket > 2)
+		close(*res->listening_socket);
+
+	return ret;
+}
+
 int main(int argc, char **argv)
 {
 	time_t cur_time;
 	pthread_t signal_thread;
 	pthread_t reader_thread;
 	pthread_t ipc_thread;
-	QUEUE_T *p_queue = create_queue(MAX_QUEUE);
 	BUFSZ *bufptr;
 	decoder *decoder = NULL;
 	splitter *splitter = NULL;
@@ -655,6 +704,7 @@ int main(int argc, char **argv)
 	tdata.tfd = -1;
 	tdata.fefd = 0;
 	tdata.dmxfd = 0;
+	tdata.wfd = -1;
 
 	int result;
 	int option_index;
@@ -685,7 +735,6 @@ int main(int argc, char **argv)
 	boolean use_udp = FALSE;
 	boolean use_http = FALSE;
 	boolean fileless = FALSE;
-	boolean use_stdout = FALSE;
 	boolean use_splitter = FALSE;
 	char *host_to = NULL;
 	int port_to = 1234;
@@ -695,12 +744,20 @@ int main(int argc, char **argv)
 	int val;
 	char *voltage[] = {"11V", "15V", "0V"};
 	char *sid_list = NULL;
-	int connected_socket = 0, listening_socket = 0;
+	int connected_socket = -1;
+	int listening_socket = -1;
 	unsigned int len;
 	char *channel = NULL;
+	RESOURCE_SET resource_set;
 
 	if (set_ch_table() != 0)
 		return 1;
+
+	resource_set.decoder = &decoder;
+	resource_set.splitter = &splitter;
+	resource_set.tdata = &tdata;
+	resource_set.sockdata = &sockdata;
+	resource_set.listening_socket = &listening_socket;
 
 	while ((result = getopt_long(argc, argv, "br:smn:ua:H:p:d:hvli:",
 								 long_options, &option_index)) != -1) {
@@ -806,6 +863,7 @@ int main(int argc, char **argv)
 		if (setsockopt(listening_socket, SOL_SOCKET, SO_REUSEADDR,
 					   &sock_optval, sizeof(sock_optval)) == -1) {
 			perror("setsockopt");
+			close(listening_socket);
 			return 1;
 		}
 
@@ -815,17 +873,20 @@ int main(int argc, char **argv)
 
 		if (bind(listening_socket, (struct sockaddr *)&sin, sizeof(sin)) < 0) {
 			perror("bind");
+			close(listening_socket);
 			return 1;
 		}
 
 		ret = listen(listening_socket, SOMAXCONN);
 		if (ret == -1) {
 			perror("listen");
+			close(listening_socket);
 			return 1;
 		}
 		fprintf(stderr, "listening at port %d\n", port_http);
 		//set rectime to the infinite
 		if (parse_time("-", &tdata.recsec) != 0) {
+			close(listening_socket);
 			return 1;
 		}
 		if (tdata.recsec == -1)
@@ -835,7 +896,6 @@ int main(int argc, char **argv)
 			if (argc - optind == 2 && use_udp) {
 				fprintf(stderr, "Fileless UDP broadcasting\n");
 				fileless = TRUE;
-				tdata.wfd = -1;
 			} else {
 				if (argc == optind && dev_num != -1 && tdata.lnb != -1) {
 					return lnb_control(dev_num, tdata.lnb);
@@ -851,12 +911,12 @@ int main(int argc, char **argv)
 
 		fprintf(stderr, "pid = %d\n", getpid());
 
-		/* tune */
-		if (tune(argv[optind], &tdata, dev_num) != 0)
-			return 1;
-
 		/* set recsec */
 		if (parse_time(argv[optind + 1], &tdata.recsec) != 0)  // no other thread --yaz
+			return 1;
+
+		/* tune */
+		if (tune(argv[optind], &tdata, dev_num) != 0)
 			return 1;
 
 		if (tdata.recsec == -1)
@@ -865,7 +925,6 @@ int main(int argc, char **argv)
 		/* open output file */
 		char *destfile = argv[optind + 2];
 		if (destfile && !strcmp("-", destfile)) {
-			use_stdout = TRUE;
 			tdata.wfd = 1; /* stdout */
 		} else {
 			if (!fileless) {
@@ -881,6 +940,7 @@ int main(int argc, char **argv)
 				if (tdata.wfd < 0) {
 					fprintf(stderr, "Cannot open output file: %s\n",
 							argv[optind + 2]);
+					close_tuner(&tdata);
 					return 1;
 				}
 			}
@@ -897,6 +957,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+	result = 1;
 	while (1) {  // http-server add-
 		if (use_http) {
 			struct hostent *peer_host;
@@ -907,7 +968,7 @@ int main(int argc, char **argv)
 			connected_socket = accept(listening_socket, (struct sockaddr *)&peer_sin, &len);
 			if (connected_socket == -1) {
 				perror("accept");
-				return 1;
+				break;
 			}
 
 			peer_host = gethostbyaddr((char *)&peer_sin.sin_addr.s_addr,
@@ -928,6 +989,10 @@ int main(int argc, char **argv)
 			sscanf(buf, "%s%s%s", s0, s1, s2);
 			char delim[] = "/";
 			channel = strtok(s1, delim);
+			if (!strcmp(channel, "0")) {
+				result = 0;
+				break;
+			}
 			char *sidflg = strtok(NULL, delim);
 			if (sidflg)
 				sid_list = sidflg;
@@ -949,7 +1014,7 @@ int main(int argc, char **argv)
 			splitter = split_startup(sid_list);
 			if (splitter->sid_list == NULL) {
 				fprintf(stderr, "Cannot start TS splitter\n");
-				return 1;
+				break;
 			}
 		}
 
@@ -958,6 +1023,7 @@ int main(int argc, char **argv)
 			int len = strlen(header);
 			if (write(connected_socket, header, len) < len) {
 				close(connected_socket);
+				connected_socket = -1;
 				if (use_splitter)
 					split_shutdown(splitter);
 				continue;
@@ -974,20 +1040,21 @@ int main(int argc, char **argv)
 		} else {  // -http-server add
 			/* initialize udp connection */
 			if (use_udp) {
-				sockdata = (sock_data *)calloc(1, sizeof(sock_data));
+				sockdata = (sock_data *)malloc(sizeof(sock_data));
+				sockdata->sfd = -1;
 				struct in_addr ia;
 				ia.s_addr = inet_addr(host_to);
 				if (ia.s_addr == INADDR_NONE) {
 					struct hostent *hoste = gethostbyname(host_to);
 					if (!hoste) {
 						perror("gethostbyname");
-						return 1;
+						break;
 					}
 					ia.s_addr = *(in_addr_t *)(hoste->h_addr_list[0]);
 				}
 				if ((sockdata->sfd = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
 					perror("socket");
-					return 1;
+					break;
 				}
 
 				sockdata->addr.sin_family = AF_INET;
@@ -997,7 +1064,7 @@ int main(int argc, char **argv)
 				if (connect(sockdata->sfd, (struct sockaddr *)&sockdata->addr,
 							sizeof(sockdata->addr)) < 0) {
 					perror("connect");
-					return 1;
+					break;
 				}
 			}
 		}  // http-server add
@@ -1006,7 +1073,7 @@ int main(int argc, char **argv)
 		pthread_mutex_init(&mutex, NULL);
 
 		/* prepare thread data */
-		tdata.queue = p_queue;
+		tdata.queue = create_queue(MAX_QUEUE);
 		tdata.decoder = decoder;
 		tdata.splitter = splitter;
 		tdata.sock_data = sockdata;
@@ -1027,7 +1094,10 @@ int main(int argc, char **argv)
 			perror("msgget");
 		}
 		pthread_create(&ipc_thread, NULL, mq_recv, &tdata);
-		fprintf(stderr, "\nRecording...\n");
+		if (use_http || use_udp)
+			fprintf(stderr, "\nSending...\n");
+		else
+			fprintf(stderr, "\nRecording...\n");
 
 		time(&tdata.start_time);
 
@@ -1048,14 +1118,14 @@ int main(int argc, char **argv)
 			if (bufptr->size <= 0) {
 				if ((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
 					f_exit = TRUE;
-					enqueue(p_queue, NULL);
+					enqueue(tdata.queue, NULL);
 					break;
 				} else {
 					free(bufptr);
 					continue;
 				}
 			}
-			enqueue(p_queue, bufptr);
+			enqueue(tdata.queue, bufptr);
 
 			/* stop recording */
 			if ((cur_time - tdata.start_time) >= tdata.recsec && !tdata.indefinite) {
@@ -1072,10 +1142,10 @@ int main(int argc, char **argv)
 					pthread_mutex_unlock(&mutex);
 					if (bufptr->size <= 0) {
 						f_exit = TRUE;
-						enqueue(p_queue, NULL);
+						enqueue(tdata.queue, NULL);
 						break;
 					}
-					enqueue(p_queue, bufptr);
+					enqueue(tdata.queue, bufptr);
 				} while (cur_time == time(NULL));
 				break;
 			}
@@ -1091,47 +1161,27 @@ int main(int argc, char **argv)
 		pthread_join(signal_thread, NULL);
 		pthread_join(ipc_thread, NULL);
 
-		/* close tuner */
-		result = close_tuner(&tdata);
-
 		/* destroy mutex */
 		pthread_mutex_destroy(&mutex);
 
 		/* release queue */
-		destroy_queue(p_queue);
-		if (use_http) {  // http-server add-
-			//reset queue
-			p_queue = create_queue(MAX_QUEUE);
+		destroy_queue(tdata.queue);
 
+		if (use_http) {  // http-server add-
 			/* close http socket */
 			close(tdata.wfd);
+
+			if (use_splitter)
+				split_shutdown(splitter);
 
 			fprintf(stderr, "connection closed. still listening at port %d\n", port_http);
 			f_exit = FALSE;
 		} else {  // -http-server add
-			/* close output file */
-			if (!use_stdout) {
-				fsync(tdata.wfd);
-				close(tdata.wfd);
-			}
-
-			/* free socket data */
-			if (use_udp) {
-				close(sockdata->sfd);
-				free(sockdata);
-			}
-
-			/* release decoder */
-			if (!use_http)
-				if (use_b25) {
-					b25_shutdown(decoder);
-				}
-		}  // http-server add
-		if (use_splitter) {
-			split_shutdown(splitter);
+			result = 0;
+			break;
 		}
-
-		if (!use_http)  // http-server add
-			return result;
 	}  // http-server add
+
+	result |= release_resources(&resource_set);
+	return result;
 }
