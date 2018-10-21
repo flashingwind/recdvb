@@ -82,12 +82,11 @@ void read_line(int socket, char *p)
 /* will be ipc message receive thread */
 void *mq_recv(void *t)
 {
-	CHANNEL_SET stock, *table;
 	thread_data *tdata = (thread_data *)t;
 	message_buf rbuf;
 	char channel[16];
 	char service_id[32] = {0};
-	int r, recsec = 0, time_to_add = 0;
+	int recsec = 0, time_to_add = 0;
 
 	while (1) {
 		if (msgrcv(tdata->msqid, &rbuf, MSGSZ, 1, 0) < 0) {
@@ -96,44 +95,10 @@ void *mq_recv(void *t)
 
 		sscanf(rbuf.mtext, "ch=%s t=%d e=%d sid=%s", channel, &recsec, &time_to_add, service_id);
 
-		if (!tdata->table)
-			break;
-		stock = *tdata->table;
-		table = searchrecoff(channel);
-		if (!table) {
-			if (channel[0] != '0' || channel[1] != '\0')
-				fprintf(stderr, "Invalid Channel: %s\n", channel);
-			goto CHECK_TIME_TO_ADD;
-		}
-		if (strcmp(table->parm_freq, stock.parm_freq)) {
-			if (table->type != stock.type) {
-				/* re-open device */
-				tdata->table = &stock;
+		pthread_mutex_lock(&mutex);
+		tune(channel, tdata, -1);
+		pthread_mutex_unlock(&mutex);
 
-				pthread_mutex_lock(&mutex);
-				r = close_tuner(tdata);
-				if (r == 0) {
-					/* wait for remainder */
-					while (tdata->queue->num_used > 0) {
-						usleep(10000);
-					}
-					tune(channel, tdata, -1);
-				}
-				pthread_mutex_unlock(&mutex);
-
-				if (r != 0)
-					break;
-			} else {
-				/* SET_CHANNEL only */
-				if (set_frequency(tdata, FALSE)) {
-					fprintf(stderr, "Cannot tune to the specified channel\n");
-					goto CHECK_TIME_TO_ADD;
-				}
-				calc_cn(tdata->fefd, tdata->table->type, FALSE);
-			}
-		}
-
-	CHECK_TIME_TO_ADD:
 		if (time_to_add) {
 			tdata->recsec += time_to_add;
 			fprintf(stderr, "Extended %d sec\n", time_to_add);
@@ -153,6 +118,7 @@ void *mq_recv(void *t)
 		if (f_exit)
 			break;
 	}
+
 	return NULL;
 }
 
@@ -705,6 +671,7 @@ int main(int argc, char **argv)
 	tdata.fefd = 0;
 	tdata.dmxfd = 0;
 	tdata.wfd = -1;
+	tdata.table = NULL;
 
 	int result;
 	int option_index;
@@ -957,8 +924,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	result = 1;
 	while (1) {  // http-server add-
+		result = 1;
 		if (use_http) {
 			struct hostent *peer_host;
 			struct sockaddr_in peer_sin;
@@ -1021,20 +988,21 @@ int main(int argc, char **argv)
 		if (use_http) {  // http-server add-
 			char header[] = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nCache-Control: no-cache\r\n\r\n";
 			int len = strlen(header);
-			if (write(connected_socket, header, len) < len) {
-				close(connected_socket);
-				connected_socket = -1;
-				if (use_splitter)
-					split_shutdown(splitter);
-				continue;
-			}
 
 			//set write target to http
 			tdata.wfd = connected_socket;
 
 			//tune
-			if (tune(channel, &tdata, -1) != 0) {
-				fprintf(stderr, "Tuner cannot start recording\n");
+			result = tune(channel, &tdata, -1);
+			if (!result)
+				result = write(tdata.wfd, header, len) < len;
+			if (result) {
+				close(tdata.wfd);
+				tdata.wfd = -1;
+				if (use_splitter) {
+					split_shutdown(splitter);
+					splitter = NULL;
+				}
 				continue;
 			}
 		} else {  // -http-server add
@@ -1166,13 +1134,17 @@ int main(int argc, char **argv)
 
 		/* release queue */
 		destroy_queue(tdata.queue);
+		tdata.queue = NULL;
 
 		if (use_http) {  // http-server add-
 			/* close http socket */
 			close(tdata.wfd);
+			tdata.wfd = -1;
 
-			if (use_splitter)
+			if (use_splitter) {
 				split_shutdown(splitter);
+				splitter = NULL;
+			}
 
 			fprintf(stderr, "connection closed. still listening at port %d\n", port_http);
 			f_exit = FALSE;

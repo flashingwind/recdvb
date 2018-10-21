@@ -288,32 +288,34 @@ int close_tuner(thread_data *tdata)
 	struct dtv_properties props;
 	int rv = 0;
 
-	if (tdata->table->type == CHTYPE_SATELLITE && tdata->lnb >= 0 && tdata->lnb != SEC_VOLTAGE_OFF) {
-		prop[0].cmd = DTV_VOLTAGE;
-		prop[0].u.data = SEC_VOLTAGE_OFF;
-		props.props = prop;
-		props.num = 1;
+	if (!tdata->table)
+		return 0;
 
-		if (ioctl(tdata->fefd, FE_SET_PROPERTY, &props) < 0) {
-			fprintf(stderr, "LNB OFF failed\n");
-			rv = 1;
-		}
-	}
-
-	tdata->table = NULL;
-	if (tdata->tfd != -1) {
+	if (tdata->tfd != -1)
 		close(tdata->tfd);
-		tdata->tfd = -1;
-	}
-	if (tdata->dmxfd > 0) {
+	if (tdata->dmxfd > 0)
 		close(tdata->dmxfd);
-		tdata->dmxfd = 0;
-	}
 	if (tdata->fefd > 0) {
+		if (tdata->table->type == CHTYPE_SATELLITE && tdata->lnb >= 0 && tdata->lnb != SEC_VOLTAGE_OFF) {
+			prop[0].cmd = DTV_VOLTAGE;
+			prop[0].u.data = SEC_VOLTAGE_OFF;
+			props.props = prop;
+			props.num = 1;
+
+			if (ioctl(tdata->fefd, FE_SET_PROPERTY, &props) < 0) {
+				fprintf(stderr, "LNB OFF failed\n");
+				rv = 1;
+			}
+		}
 		close(tdata->fefd);
-		tdata->fefd = 0;
 	}
 
+	tdata->tfd = -1;
+	tdata->dmxfd = 0;
+	tdata->fefd = 0;
+	tdata->table = NULL;
+
+	fprintf(stderr, "tuner closed\n");
 	return rv;
 }
 
@@ -574,19 +576,46 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 {
 	struct dmx_pes_filter_params filter;
 	char device[32];
+	CHANNEL_SET stock, *table;
 
 	/* get channel */
-	tdata->table = searchrecoff(channel);
-	if (tdata->table == NULL) {
+	if (tdata->table)
+		stock = *tdata->table;
+	table = searchrecoff(channel);
+	if (!table) {
 		fprintf(stderr, "Invalid Channel: %s\n", channel);
 		return 1;
 	}
 
+	/* re-tune */
+	if (tdata->table) {
+		if (!strcmp(table->parm_freq, stock.parm_freq))
+			return 0;
+		if (table->type == stock.type) {
+			if (set_frequency(tdata, FALSE)) {
+				fprintf(stderr, "Cannot tune to the specified channel\n");
+				return 1;
+			}
+			return 0;
+		} else {
+			tdata->table = &stock;
+			if (!close_tuner(tdata) && tdata->queue) {
+				/* wait for remainder */
+				while (tdata->queue->num_used > 0)
+					usleep(10000);
+			}
+		}
+	}
+	tdata->table = table;
+
 	/* open tuner */
 	/* case 1: specified tuner device */
 	if (dev_num >= 0) {
-		if (open_tuner(tdata, dev_num, TRUE) != 0)
+		if (open_tuner(tdata, dev_num, TRUE) != 0) {
+			tdata->table = NULL;
+			fprintf(stderr, "Cannot open tuner\n");
 			return 1;
+		}
 		while (dvb_lock_check(tdata) != 0) {
 			if (tdata->tune_persistent) {
 				if (f_exit) {
@@ -602,14 +631,15 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 		}
 	} else {
 		/* case 2: loop around available devices */
+		boolean tuned = FALSE;
 #if FULLAUTO_SEARCH
 		struct dirent **namelist;
 		int lp;
 		int num_devs = scandir("/dev/dvb", &namelist, selects, alphasort);
-		boolean tuned = FALSE;
 
 		if (num_devs == -1) {
 			perror("scandir");
+			tdata->table = NULL;
 			return 1;
 		}
 		for (lp = 0; lp < num_devs; lp++) {
@@ -650,15 +680,16 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 					}
 
 					if (count >= MAX_RETRY) {
-						close_tuner(tdata);
+						close(tdata->fefd);
+						tdata->fefd = 0;
 						count = 0;
 						continue;
 					}
 				} /* tune_persistent */
 				else {
 					if (dvb_lock_check(tdata) != 0) {
-						close_tuner(tdata);
-						tdata->tfd = -1;
+						close(tdata->fefd);
+						tdata->fefd = 0;
 						continue;
 					}
 				}
@@ -676,6 +707,7 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 #endif
 		/* all tuners cannot be used */
 		if (tuned == FALSE) {
+			close_tuner(tdata);
 			fprintf(stderr, "Cannot tune to the specified channel\n");
 			return 1;
 		}
@@ -684,7 +716,7 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 	if (tdata->dmxfd == 0) {
 		sprintf(device, "/dev/dvb/adapter%d/demux0", dev_num);
 		if ((tdata->dmxfd = open(device, O_RDWR)) < 0) {
-			tdata->dmxfd = 0;
+			close_tuner(tdata);
 			fprintf(stderr, "cannot open demux device\n");
 			return 1;
 		}
@@ -698,17 +730,15 @@ int tune(char *channel, thread_data *tdata, int dev_num)
 	if (ioctl(tdata->dmxfd, DMX_SET_PES_FILTER, &filter) == -1) {
 		fprintf(stderr, "FILTER %i: ", filter.pid);
 		perror("ioctl DMX_SET_PES_FILTER");
-		close(tdata->dmxfd);
-		tdata->dmxfd = 0;
+		close_tuner(tdata);
 		return 1;
 	}
 
 	if (tdata->tfd < 0) {
 		sprintf(device, "/dev/dvb/adapter%d/dvr0", dev_num);
 		if ((tdata->tfd = open(device, O_RDONLY)) < 0) {
+			close_tuner(tdata);
 			fprintf(stderr, "cannot open dvr device\n");
-			close(tdata->dmxfd);
-			tdata->dmxfd = 0;
 			return 1;
 		}
 	}
