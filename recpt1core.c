@@ -6,7 +6,6 @@
 #include <sys/poll.h>
 #include "recpt1core.h"
 #include "pt1_dev.h"
-#include "version.h"
 
 #define ISDB_T_NODE_LIMIT 24  // 32:ARIB limit 24:program maximum
 #define ISDB_T_SLOT_LIMIT 8
@@ -18,6 +17,7 @@
 #define DMX_BUFFER_SIZE 1024 * 1024
 
 /* globals */
+const char *version = PACKAGE_VERSION;
 boolean f_exit = FALSE;
 ISDB_FREQ_CONV_TABLE isdb_conv_table[MAX_CH];
 CHANNEL_SET channel_set;
