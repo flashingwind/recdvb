@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "decoder.h"
 
@@ -62,6 +63,8 @@ error:
 
 int b25_shutdown(decoder *dec)
 {
+	if(dec->_data)
+		free(dec->_data);
 	dec->b25->release(dec->b25);
 	dec->bcas->release(dec->bcas);
 	free(dec);
@@ -73,18 +76,37 @@ int b25_decode(decoder *dec,
 			   ARIB_STD_B25_BUFFER *sbuf,
 			   ARIB_STD_B25_BUFFER *dbuf)
 {
+	ARIB_STD_B25_BUFFER buf;
 	int code;
 
-	code = dec->b25->put(dec->b25, sbuf);
+	buf.data = sbuf->data;
+	buf.size = sbuf->size;
+	code = dec->b25->put(dec->b25, &buf);
 	if (code < 0) {
 		fprintf(stderr, "b25->put failed\n");
-		return code;
-	}
-
-	code = dec->b25->get(dec->b25, dbuf);
-	if (code < 0) {
-		fprintf(stderr, "b25->get failed\n");
-		return code;
+		if (code < ARIB_STD_B25_ERROR_NO_ECM_IN_HEAD_32M) {
+			uint8_t *p = NULL;
+			dec->b25->withdraw(dec->b25, &buf);
+			if (buf.size > 0) {
+				if (dec->_data != NULL) {
+					free(dec->_data);
+					dec->_data = NULL;
+				}
+				p = (uint8_t *)malloc(buf.size + sbuf->size);
+			}
+			if (p) {
+				memcpy(p, buf.data, buf.size);
+				memcpy(p + buf.size, sbuf->data, sbuf->size);
+				dbuf->data = p;
+				dbuf->size = buf.size + sbuf->size;
+				dec->_data = p;
+				code = 0;
+			}
+		}
+	} else {
+		code = dec->b25->get(dec->b25, dbuf);
+		if (code < 0)
+			fprintf(stderr, "b25->get failed\n");
 	}
 
 	return code;
