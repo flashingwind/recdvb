@@ -8,5 +8,5 @@ config.log
 config.status
 recdvb
 chkdvbsignal
-recpe1ctl
+recpt1ctl
 tssplitter_lite

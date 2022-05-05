@@ -61,20 +61,20 @@ error:
 	return NULL;
 }
 
-int b25_shutdown(decoder *dec)
+void b25_shutdown(decoder *dec)
 {
+
+	if(!dec)
+		return;
+
 	if(dec->_data)
 		free(dec->_data);
 	dec->b25->release(dec->b25);
 	dec->bcas->release(dec->bcas);
 	free(dec);
-
-	return 0;
 }
 
-int b25_decode(decoder *dec,
-			   ARIB_STD_B25_BUFFER *sbuf,
-			   ARIB_STD_B25_BUFFER *dbuf)
+int b25_decode(decoder *dec, ARIB_STD_B25_BUFFER *sbuf, ARIB_STD_B25_BUFFER *dbuf)
 {
 	ARIB_STD_B25_BUFFER buf;
 	int code;
@@ -112,8 +112,7 @@ int b25_decode(decoder *dec,
 	return code;
 }
 
-int b25_finish(decoder *dec,
-			   ARIB_STD_B25_BUFFER *dbuf)
+int b25_finish(decoder *dec, ARIB_STD_B25_BUFFER *dbuf)
 {
 	int code;
 
@@ -140,20 +139,16 @@ decoder *b25_startup(decoder_options *opt)
 	return NULL;
 }
 
-int b25_shutdown(decoder *dec)
+void b25_shutdown(decoder *dec)
+{
+}
+
+int b25_decode(decoder *dec, ARIB_STD_B25_BUFFER *sbuf, ARIB_STD_B25_BUFFER *dbuf)
 {
 	return 0;
 }
 
-int b25_decode(decoder *dec,
-			   ARIB_STD_B25_BUFFER *sbuf,
-			   ARIB_STD_B25_BUFFER *dbuf)
-{
-	return 0;
-}
-
-int b25_finish(decoder *dec,
-			   ARIB_STD_B25_BUFFER *dbuf)
+int b25_finish(decoder *dec, ARIB_STD_B25_BUFFER *dbuf)
 {
 	return 0;
 }
